@@ -1,0 +1,23 @@
+#!/bin/bash
+
+#PBS -N Munge_CP
+#PBS -r n
+#PBS -l walltime=72:00:00
+#PBS -l ncpus=6,mem=128gb
+#PBS -M bade.uckac@qimrberghofer.edu.au
+#PBS -o /working/lab_miguelr/badeU/PGS_AGDS_Painsite/GWAS_Sumstats/mungesumstats_CP_${PBS_JOBID}.out
+#PBS -e /working/lab_miguelr/badeU/PGS_AGDS_Painsite/GWAS_Sumstats/mungesumstats_CP_${PBS_JOBID}.err
+
+module load ldsc/20200724
+
+# ---- MUNGE CHRONIC PAIN ----
+python /software/ldsc/ldsc-20200724/munge_sumstats.py \
+  --sumstats /working/lab_miguelr/badeU/PGS_AGDS_Painsite/GWAS_Sumstats/ChronicPain_clean.gz \
+  --snp SNP \
+  --a1 A1 \
+  --a2 A2 \
+  --p P \
+  --N 1235695 \
+  --signed-sumstats BETA,0 \
+  --out /working/lab_miguelr/badeU/PGS_AGDS_Painsite/GWAS_Sumstats/ChronicPain \
+  --merge-alleles /working/lab_miguelr/badeU/Reference/w_hm3.noMHC.snplist
