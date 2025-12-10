@@ -1,3 +1,11 @@
+
+###  PBS job generates European-specific allele frequencies (EUR AF) from 1000 Genomes Phase 3 using the .hap.gz + .legend.gz files in /reference/data/1000GP_Phase3.
+
+It outputs a clean allele frequency table for all SNPs across chromosomes 1–22, which you will merge into the GWAS summary statistics. 
+
+
+
+
 cat > EUR_AF_AFcalc.pbs << 'EOF'
 ##########################################################################
 #
