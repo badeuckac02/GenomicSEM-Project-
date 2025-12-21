@@ -1,3 +1,4 @@
 The GBMI Gwas Formatting folder contains an auto pipeline of restructuring sumstats files for the R GenomicSEM munge package. 
 Munge Sumstats file contains manual munging from bash terminal using ldsc software directly. 
 CTG-VL Extract RSid Map File for Sumstats does rsid extractions from reference folders used as mapping files if a gwas sumstats doesnt have rsid information. 
+1000 Genomes EUR AF calculation extracts AFs for SNPs from 1000 genomes reference panel. 
