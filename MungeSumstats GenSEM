@@ -1,0 +1,50 @@
+#!/usr/bin/env Rscript
+
+library(GenomicSEM)
+
+setwd("/working/lab_miguelr/badeU/GenSEM_Files")
+
+hm3 <- "/working/lab_miguelr/badeU/Reference/w_hm3.noMHC.snplist"
+
+files <- c(
+  "GBMI_Asthma.GSEM.tsv.gz",
+  "GBMI_COPD.GSEM.tsv.gz",
+  "GBMI_HF.GSEM.tsv.gz",
+  "GBMI_Stroke.GSEM.tsv.gz"
+)
+
+traits <- c(
+  "GBMI_Asthma",
+  "GBMI_COPD",
+  "GBMI_HF",
+  "GBMI_Stroke"
+)
+
+cat("============================================\n")
+cat("Starting GenomicSEM munge for GBMI traits\n")
+cat("============================================\n")
+
+for (i in seq_along(files)) {
+  cat("\n▶ Munging:", traits[i], "\n")
+
+  tryCatch(
+    munge(
+      files       = files[i],
+      hm3         = hm3,
+      trait.names = traits[i],
+      N           = NA,   # use SNP-specific N column
+      info.filter = 0,
+      maf.filter  = 0
+    ),
+    error = function(e) {
+      cat("❌ FAILED:", traits[i], "\n")
+      cat(e$message, "\n")
+    }
+  )
+
+  cat("✔ DONE:", traits[i], "\n")
+}
+
+cat("\n============================================\n")
+cat("✅ All GBMI traits munged (where possible)\n")
+cat("============================================\n")
