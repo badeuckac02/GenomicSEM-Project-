@@ -62,3 +62,20 @@ for FILE in "$@"; do
 done
 
 echo "✅ SNP → rsID mapping completed for all files."
+#Then clean NaN beta values or SEs 
+
+zcat M17.ldsc_ready.rsid.clean.tsv.gz | \
+awk '
+BEGIN {
+  OFS="\t";
+  print "SNP","A1","A2","BETA","SE","P","N"
+}
+NR>1 &&
+$4 ~ /^-?[0-9.]+([eE][-+]?[0-9]+)?$/ &&
+$5 ~ /^-?[0-9.]+([eE][-+]?[0-9]+)?$/ &&
+$6 ~ /^-?[0-9.]+([eE][-+]?[0-9]+)?$/ &&
+$7 ~ /^[0-9.]+$/ &&
+$5 > 0 &&
+$6 > 0 && $6 < 1 {
+  print
+}' | gzip -c > M17.GSEM.rsid.FINAL.tsv.gz
