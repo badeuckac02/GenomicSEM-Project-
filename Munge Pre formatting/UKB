@@ -1,0 +1,64 @@
+#!/bin/bash
+set -euo pipefail
+
+# ===============================
+# CONFIGURATION
+# ===============================
+MAP="chrpos_to_rsid.autosomes.sorted"
+TMPDIR="/working/lab_miguelr/badeU"
+SORT_MEM="2G"
+
+##We need rsid mapping for UKB files.
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: $0 <GWAS1.tsv.gz> [GWAS2.tsv.gz ...]"
+  exit 1
+fi
+
+# ===============================
+# MAIN LOOP
+# ===============================
+for FILE in "$@"; do
+  BASENAME=$(basename "$FILE" .tsv.gz)
+  OUT="${BASENAME}.rsid.tsv.gz"
+
+  echo "▶ Mapping SNPs to rsIDs for: $FILE"
+
+  # 1. Add join key (CHR:BP)
+  zcat "$FILE" | \
+  awk '
+  BEGIN{OFS="\t"}
+  NR==1 {print "KEY",$0; next}
+  {
+    split($1,a,":")
+    key=a[1] ":" a[2]
+    print key,$0
+  }' > "${BASENAME}.withkey.tsv"
+
+  # 2. Sort GWAS file
+  sort -T "$TMPDIR" -S "$SORT_MEM" -k1,1 \
+    "${BASENAME}.withkey.tsv" \
+    > "${BASENAME}.withkey.sorted.tsv"
+
+  # 3. Join + replace SNP column
+  join -t $'\t' -a 1 -1 1 -2 1 \
+    "${BASENAME}.withkey.sorted.tsv" "$MAP" | \
+  awk '
+  BEGIN{OFS="\t"}
+  NR==1 {
+    # print header without KEY and rsID
+    for(i=2;i<=NF-1;i++) printf "%s%s",$i,(i<NF-1?OFS:ORS)
+    next
+  }
+  {
+    if ($NF ~ /^rs/) $2 = $NF
+    for(i=2;i<=NF-1;i++) printf "%s%s",$i,(i<NF-1?OFS:ORS)
+  }' | gzip > "$OUT"
+
+  # 4. Cleanup
+  rm "${BASENAME}.withkey.tsv" "${BASENAME}.withkey.sorted.tsv"
+
+  echo "✔ Output written to: $OUT"
+done
+
+echo "✅ SNP → rsID mapping completed for all files."
