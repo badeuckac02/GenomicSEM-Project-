@@ -1,46 +1,46 @@
+cd to working directory 
+
 for f in \
   MVP_R4.1000G_AGR.Phe_472.EUR.GIA.dbGaP.txt.gz \
   MVP_R4.1000G_AGR.Phe_475.EUR.GIA.dbGaP.txt.gz \
   MVP_R4.1000G_AGR.Phe_496_2.EUR.GIA.dbGaP.txt.gz
 do
-  IN="$f"
   TRAIT=$(echo "$f" | sed 's/.*Phe_//' | sed 's/.EUR.*//')
   OUT="MVP_Phe_${TRAIT}.GSEM.tsv"
 
-  echo "============================================"
-  echo "▶ Processing MVP_Phe_${TRAIT}"
-  echo "  Input : $IN"
-  echo "  Output: $OUT.gz"
-  echo "============================================"
+  echo "▶ Rebuilding MVP_Phe_${TRAIT}"
 
-  zcat "$IN" | \
-  awk 'BEGIN {
-        OFS="\t";
-        print "SNP","A1","A2","BETA","SE","P","N"
-      }
-      NR>1 && $13>0 && $14>0 && $14<1 {
-        beta = log($13)
-        z = sqrt(-2*log($14))
-        absbeta = (beta < 0 ? -beta : beta)
-        se = (z>0 ? absbeta/z : "NA")
-        if (se!="NA")
-          print $1, $6, $5, beta, se, $14, $8
-      }' > "$OUT"
+  zcat "$f" | awk '
+  BEGIN {
+    OFS="\t";
+    print "SNP","A1","A2","BETA","SE","P","N"
+  }
+  NR>1 && $13>0 && $15>0 && $15<1 {
+
+    ea = $6
+    ref = $4
+    alt = $5
+
+    if (ea == ref) {
+      a1 = ea
+      a2 = alt
+    } else if (ea == alt) {
+      a1 = ea
+      a2 = ref
+    } else {
+      next
+    }
+
+    beta = log($13)
+    z = sqrt(-2*log($15))
+    absbeta = (beta < 0 ? -beta : beta)
+    se = (z > 0 ? absbeta / z : "NA")
+
+    if (se != "NA")
+      print $1, a1, a2, beta, se, $15, $8
+  }' > "$OUT"
 
   gzip -f "$OUT"
 
-  echo "• Sanity checks for MVP_Phe_${TRAIT}"
-  zcat "$OUT.gz" | head -n 1
-  zcat "$OUT.gz" | awk '{print NF}' | sort -u
-  echo -n "  Rows: "
-  zcat "$OUT.gz" | wc -l
-  echo -n "  Bad P-values: "
-  zcat "$OUT.gz" | awk 'NR>1 && ($6<=0 || $6>=1)' | wc -l
-  echo -n "  Missing SNP IDs: "
-  zcat "$OUT.gz" | awk 'NR>1 && ($1=="NA" || $1=="")' | wc -l
-
-  echo "✔ MVP_Phe_${TRAIT} done"
+  echo "✔ MVP_Phe_${TRAIT} rebuilt"
 done
-
-echo "============================================"
-echo "✅ All MVP respiratory traits converted to GSEM format"
