@@ -1,0 +1,118 @@
+# ============================================================
+# Multivariate LDSC using GenomicSEM
+# ============================================================
+
+library(GenomicSEM)
+
+setwd("/working/lab_miguelr/badeU/GenSEM_Files")
+
+# ------------------------------------------------------------
+# Munged summary statistics (all must be LDSC-ready)
+# ------------------------------------------------------------
+traits <- c(
+  "ADHD.sumstats.gz",
+  "Asthma.gz",
+  "CBronchitis.gz",
+  "CNasophyrngitis.gz",
+  "COPD.gz",
+  "CSinusitis.gz",
+  "HF.gz",
+  "MCP.gz",
+  "MDD.gz",
+  "MVP_Epilepsy.sumstats.gz",
+  "MVP_GIReflux.sumstats.gz",
+  "MVP_IBS.sumstats.gz",
+  "MVP_Insomnia.sumstats.gz",
+  "MVP_Migraine.gz",
+  "OSA.gz",
+  "OUD.gz",
+  "Stroke.gz"
+)
+
+traits <- file.path("mungedR", traits)
+
+# ------------------------------------------------------------
+# Trait names (MUST match order of traits above)
+# ------------------------------------------------------------
+trait.names <- c(
+  "ADHD",
+  "Asthma",
+  "Chronic_Bronchitis",
+  "Chronic_Nasopharyngitis",
+  "COPD",
+  "Chronic_Sinusitis",
+  "Heart_Failure",
+  "Multisite_Chronic_Pain",
+  "Major_Depression",
+  "Epilepsy",
+  "GERD",
+  "IBS",
+  "Insomnia",
+  "Migraine",
+  "OSA",
+  "OUD",
+  "Stroke"
+)
+
+# ------------------------------------------------------------
+# Sample prevalence (from your table)
+# NOTE: High values are expected due to ascertainment
+# ------------------------------------------------------------
+sample.prev <- c(
+  0.3645,  # ADHD
+  0.0886,  # Asthma
+  0.0652,  # Chronic bronchitis
+  NA,      # Chronic nasopharyngitis
+  0.0588,  # COPD
+  0.0906,  # Chronic sinusitis
+  0.0514,  # Heart failure
+  NA,      # Multisite chronic pain
+  0.1318,  # MDD
+  0.0417,  # Epilepsy
+  0.3419,  # GERD
+  0.0500,  # IBS
+  0.1925,  # Insomnia
+  0.9168,  # Migraine
+  0.2944,  # OSA
+  NA,      # OUD
+  0.0332   # Stroke
+)
+
+# ------------------------------------------------------------
+# Population prevalence
+# Correct choice: NA for all traits
+# ------------------------------------------------------------
+population.prev <- rep(NA, length(traits))
+
+# ------------------------------------------------------------
+# LD score directories (EUR)
+# ------------------------------------------------------------
+ld  <- "/working/lab_miguelr/badeU/eur_w_ld_chr/"
+wld <- "/working/lab_miguelr/badeU/eur_w_ld_chr/"
+
+# ------------------------------------------------------------
+# Run multivariate LDSC
+# ------------------------------------------------------------
+cat("============================================\n")
+cat("Running multivariate LDSC\n")
+cat("Number of traits:", length(traits), "\n")
+cat("============================================\n")
+
+LDSC_MET <- ldsc(
+  traits          = traits,
+  sample.prev     = sample.prev,
+  population.prev = population.prev,
+  trait.names     = trait.names,
+  ld              = ld,
+  wld             = wld
+)
+
+# ------------------------------------------------------------
+# Save output
+# ------------------------------------------------------------
+saveRDS(LDSC_MET, file = "LDSC_MET_ALL_TRAITS.rds")
+
+cat("============================================\n")
+cat("✅ Multivariate LDSC completed successfully\n")
+cat("Saved as LDSC_MET_ALL_TRAITS.rds\n")
+cat("============================================\n")
