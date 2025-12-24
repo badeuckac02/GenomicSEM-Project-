@@ -1,13 +1,17 @@
 # ============================================================
 # Multivariate LDSC using GenomicSEM
+# Working directory: mungedR
 # ============================================================
 
 library(GenomicSEM)
 
-setwd("/working/lab_miguelr/badeU/GenSEM_Files")
+# ------------------------------------------------------------
+# Set working directory
+# ------------------------------------------------------------
+setwd("/working/lab_miguelr/badeU/GenSEM_Files/mungedR")
 
 # ------------------------------------------------------------
-# Munged summary statistics (all must be LDSC-ready)
+# Munged summary statistics (files must exist here)
 # ------------------------------------------------------------
 traits <- c(
   "ADHD.sumstats.gz",
@@ -29,10 +33,10 @@ traits <- c(
   "Stroke.gz"
 )
 
-traits <- file.path("mungedR", traits)
+stopifnot(all(file.exists(traits)))
 
 # ------------------------------------------------------------
-# Trait names (MUST match order of traits above)
+# Trait names (ORDER MUST MATCH traits)
 # ------------------------------------------------------------
 trait.names <- c(
   "ADHD",
@@ -56,7 +60,6 @@ trait.names <- c(
 
 # ------------------------------------------------------------
 # Sample prevalence (from your table)
-# NOTE: High values are expected due to ascertainment
 # ------------------------------------------------------------
 sample.prev <- c(
   0.3645,  # ADHD
@@ -72,7 +75,7 @@ sample.prev <- c(
   0.3419,  # GERD
   0.0500,  # IBS
   0.1925,  # Insomnia
-  0.9168,  # Migraine
+  0.9168,  # Migraine (ascertained)
   0.2944,  # OSA
   NA,      # OUD
   0.0332   # Stroke
