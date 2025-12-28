@@ -14,11 +14,11 @@ setwd("/working/lab_miguelr/badeU/GenSEM_Files/mungedR")
 # Munged summary statistics (files must exist here)
 # ------------------------------------------------------------
 traits <- c(
-  "ADHD.sumstats.gz",
+  "ADHD.gz",
   "CSinusitis.gz",
   "Hypoglycemia.gz",
   "MCP.gz",
-  "MDD.gz",
+  "MDD.gz",      # Depression
   "GERD.gz",
   "IBS.gz",
   "Insomnia.gz",
@@ -39,30 +39,32 @@ trait.names <- c(
   "OSA"
 )
 
+stopifnot(length(traits) == length(trait.names))
+
 # ------------------------------------------------------------
-# Sample prevalence (from your table)
+# Sample prevalence (same order as traits)
 # ------------------------------------------------------------
 sample.prev <- c(
   0.3645,  # ADHD
   0.0906,  # Chronic sinusitis
   0.0128,  # Hypoglycemia
-  NA,      # Multisite chronic pain (case–control not clearly defined / continuous count; leave NA)
+  NA,      # Multisite chronic pain (non-CC / complex)
   0.1318,  # Depression
   0.3419,  # GERD
   0.0500,  # IBS
   0.1925,  # Insomnia
-  0.9168,  # Migraine (ascertained sample, high case fraction)
+  0.9168,  # Migraine (ascertained)
   0.2944   # OSA
 )
 
 # ------------------------------------------------------------
-# Population prevalence
+# Population prevalence (same order as traits)
 # ------------------------------------------------------------
 population.prev <- c(
   0.08,   # ADHD
   0.08,   # Chronic sinusitis
-  NA,     # Hypoglycemia (no reliable pop prev supplied)
-  NA,     # Multisite chronic pain (complex phenotype; leave NA)
+  NA,     # Hypoglycemia (no robust pop prev)
+  NA,     # Multisite chronic pain
   0.072,  # Depression
   0.15,   # GERD
   0.092,  # IBS
@@ -71,11 +73,17 @@ population.prev <- c(
   0.10    # OSA
 )
 
+stopifnot(length(sample.prev) == length(traits))
+stopifnot(length(population.prev) == length(traits))
+
 # ------------------------------------------------------------
 # LD score directories (EUR)
 # ------------------------------------------------------------
 ld  <- "/working/lab_miguelr/badeU/eur_w_ld_chr/"
 wld <- "/working/lab_miguelr/badeU/eur_w_ld_chr/"
+
+# Optional: quick file existence check
+print(data.frame(traits = traits, exists = file.exists(traits)))
 
 # ------------------------------------------------------------
 # Run multivariate LDSC
