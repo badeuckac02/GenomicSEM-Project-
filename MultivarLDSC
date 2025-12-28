@@ -15,47 +15,28 @@ setwd("/working/lab_miguelr/badeU/GenSEM_Files/mungedR")
 # ------------------------------------------------------------
 traits <- c(
   "ADHD.sumstats.gz",
-  "Asthma.gz",
-  "CBronchitis.gz",
-  "CNasophyrngitis.gz",
-  "COPD.gz",
   "CSinusitis.gz",
-  "HF.gz",
+  "Hypoglycemia.gz",
   "MCP.gz",
   "MDD.gz",
-  "MVP_Epilepsy.sumstats.gz",
-  "MVP_GIReflux.sumstats.gz",
-  "MVP_IBS.sumstats.gz",
-  "MVP_Insomnia.sumstats.gz",
-  "MVP_Migraine.gz",
-  "OSA.gz",
-  "OUD.gz",
-  "Stroke.gz"
+  "GERD.gz",
+  "IBS.gz",
+  "Insomnia.gz",
+  "Migraine.gz",
+  "OSA.gz"
 )
 
-stopifnot(all(file.exists(traits)))
-
-# ------------------------------------------------------------
-# Trait names (ORDER MUST MATCH traits)
-# ------------------------------------------------------------
 trait.names <- c(
   "ADHD",
-  "Asthma",
-  "Chronic_Bronchitis",
-  "Chronic_Nasopharyngitis",
-  "COPD",
   "Chronic_Sinusitis",
-  "Heart_Failure",
+  "Hypoglycemia",
   "Multisite_Chronic_Pain",
-  "Major_Depression",
-  "Epilepsy",
+  "Depression",
   "GERD",
   "IBS",
   "Insomnia",
   "Migraine",
-  "OSA",
-  "OUD",
-  "Stroke"
+  "OSA"
 )
 
 # ------------------------------------------------------------
@@ -63,29 +44,32 @@ trait.names <- c(
 # ------------------------------------------------------------
 sample.prev <- c(
   0.3645,  # ADHD
-  0.0886,  # Asthma
-  0.0652,  # Chronic bronchitis
-  NA,      # Chronic nasopharyngitis
-  0.0588,  # COPD
   0.0906,  # Chronic sinusitis
-  0.0514,  # Heart failure
-  NA,      # Multisite chronic pain
-  0.1318,  # MDD
-  0.0417,  # Epilepsy
+  0.0128,  # Hypoglycemia
+  NA,      # Multisite chronic pain (case–control not clearly defined / continuous count; leave NA)
+  0.1318,  # Depression
   0.3419,  # GERD
   0.0500,  # IBS
   0.1925,  # Insomnia
-  0.9168,  # Migraine (ascertained)
-  0.2944,  # OSA
-  NA,      # OUD
-  0.0332   # Stroke
+  0.9168,  # Migraine (ascertained sample, high case fraction)
+  0.2944   # OSA
 )
 
 # ------------------------------------------------------------
 # Population prevalence
-# Correct choice: NA for all traits
 # ------------------------------------------------------------
-population.prev <- rep(NA, length(traits))
+population.prev <- c(
+  0.08,   # ADHD
+  0.08,   # Chronic sinusitis
+  NA,     # Hypoglycemia (no reliable pop prev supplied)
+  NA,     # Multisite chronic pain (complex phenotype; leave NA)
+  0.072,  # Depression
+  0.15,   # GERD
+  0.092,  # IBS
+  0.06,   # Insomnia
+  0.14,   # Migraine
+  0.10    # OSA
+)
 
 # ------------------------------------------------------------
 # LD score directories (EUR)
@@ -113,9 +97,9 @@ LDSC_MET <- ldsc(
 # ------------------------------------------------------------
 # Save output
 # ------------------------------------------------------------
-saveRDS(LDSC_MET, file = "LDSC_MET_ALL_TRAITS.rds")
+saveRDS(LDSC_MET, file = "LDSC_MET_Finalset.rds")
 
 cat("============================================\n")
 cat("✅ Multivariate LDSC completed successfully\n")
-cat("Saved as LDSC_MET_ALL_TRAITS.rds\n")
+cat("Saved as LDSC_MET_Finalset.rds\n")
 cat("============================================\n")
