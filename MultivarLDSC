@@ -18,7 +18,7 @@ traits <- c(
   "CSinusitis.gz",
   "Hypoglycemia.gz",
   "MCP.gz",
-  "MDD.gz",      # Depression
+  "MDD.gz",    
   "GERD.gz",
   "IBS.gz",
   "Insomnia.gz",
