@@ -1,0 +1,44 @@
+
+setwd("/working/lab_miguelr/badeU/GenSEM_Files/mungedR")
+
+LDSC_MET <- readRDS("LDSC_MET_Finalset.rds")
+
+S_multi  <- LDSC_MET$S
+rg_multi <- cov2cor(S_multi)
+
+colnames(rg_multi)
+# Should be:
+# [1] "ADHD" "Chronic_Sinusitis" "Hypoglycemia"
+#     "Multisite_Chronic_Pain" "Depression"
+#     "GERD" "IBS" "Insomnia" "Migraine" "OSA"
+ ############################################## Sanity Checks ###########
+
+
+####### Two Factor Model In Lavaan CFA Analysis ############
+
+model_2F <- '
+  PainPsych =~
+    ADHD +
+    Multisite_Chronic_Pain +
+    Insomnia +
+    Migraine +
+    OSA
+
+  ImmuneGI =~
+    IBS +
+    GERD +
+    Chronic_Sinusitis +
+    Depression +
+    Hypoglycemia
+
+  PainPsych ~~ ImmuneGI
+'
+
+fit_2F_lav <- cfa(
+  model       = model_2F,
+  sample.cov  = rg_multi,
+  sample.nobs = 100000,  # large dummy N; we care about structure, not exact SEs
+  std.lv      = TRUE
+)
+
+summary(fit_2F_lav, fit.measures = TRUE, standardized = TRUE)
