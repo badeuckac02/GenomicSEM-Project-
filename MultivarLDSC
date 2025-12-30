@@ -18,12 +18,18 @@ traits <- c(
   "CSinusitis.gz",
   "Hypoglycemia.gz",
   "MCP.gz",
-  "MDD.gz",    
+  "MDD.gz",
   "GERD.gz",
   "IBS.gz",
   "Insomnia.gz",
   "Migraine.gz",
-  "OSA.gz"
+  "OSA.gz",
+  "HF.gz",
+  "COPD.gz",
+  "Asthma.gz",
+  "Epilepsy.gz",
+  "OUD.gz",
+  "Stroke.gz"
 )
 
 trait.names <- c(
@@ -36,7 +42,13 @@ trait.names <- c(
   "IBS",
   "Insomnia",
   "Migraine",
-  "OSA"
+  "OSA",
+  "HF",
+  "COPD",
+  "Asthma",
+  "Epilepsy",
+  "OUD",
+  "Stroke"
 )
 
 stopifnot(length(traits) == length(trait.names))
@@ -54,7 +66,13 @@ sample.prev <- c(
   0.0500,  # IBS
   0.1925,  # Insomnia
   0.9168,  # Migraine (ascertained)
-  0.2944   # OSA
+  0.2944,  # OSA
+  0.051,   # HF
+  0.0588,  # COPD
+  0.0886,  # Asthma
+  0.0417,  # Epilepsy
+  0.121,   # OUD
+  0.0332   # Stroke
 )
 
 # ------------------------------------------------------------
@@ -70,7 +88,13 @@ population.prev <- c(
   0.092,  # IBS
   0.06,   # Insomnia
   0.14,   # Migraine
-  0.10    # OSA
+  0.10,   # OSA
+  0.11,   # HF
+  0.12,   # COPD
+  0.043,  # Asthma
+  0.0076, # Epilepsy
+  0.005,  # OUD
+  0.25    # Stroke
 )
 
 stopifnot(length(sample.prev) == length(traits))
@@ -111,3 +135,5 @@ cat("============================================\n")
 cat("✅ Multivariate LDSC completed successfully\n")
 cat("Saved as LDSC_MET_Finalset.rds\n")
 cat("============================================\n")
+
+
