@@ -79,22 +79,22 @@ sample.prev <- c(
 # Population prevalence (same order as traits)
 # ------------------------------------------------------------
 population.prev <- c(
-  0.08,   # ADHD
-  0.08,   # Chronic sinusitis
+  0.028,  # ADHD
+  0.10,   # Chronic sinusitis
   NA,     # Hypoglycemia (no robust pop prev)
   NA,     # Multisite chronic pain
-  0.072,  # Depression
-  0.15,   # GERD
-  0.092,  # IBS
+  0.064,  # Depression
+  0.14,   # GERD/Acid reflux
+  0.092,  # Irritable Bowel Syndrome (IBS)
   0.06,   # Insomnia
-  0.14,   # Migraine
-  0.10,   # OSA
-  0.11,   # HF
-  0.12,   # COPD
-  0.043,  # Asthma
-  0.0076, # Epilepsy
+  0.11,   # Migraine
+  NA,   # OSA
+  0.017,  # Heart Failure
+  0.02,   # COPD
+  0.08,   # Asthma
+  0.007,  # Epilepsy
   0.005,  # OUD
-  0.25    # Stroke
+  0.09    # Stroke
 )
 
 stopifnot(length(sample.prev) == length(traits))
