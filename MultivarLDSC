@@ -27,7 +27,6 @@ traits <- c(
   "HF.gz",
   "COPD.gz",
   "Asthma.gz",
-  "Epilepsy.gz",
   "OUD.gz",
   "Stroke.gz"
 )
@@ -46,7 +45,6 @@ trait.names <- c(
   "HF",
   "COPD",
   "Asthma",
-  "Epilepsy",
   "OUD",
   "Stroke"
 )
@@ -70,7 +68,6 @@ sample.prev <- c(
   0.051,   # HF
   0.0588,  # COPD
   0.0886,  # Asthma
-  0.0417,  # Epilepsy
   0.121,   # OUD
   0.0332   # Stroke
 )
@@ -92,7 +89,6 @@ population.prev <- c(
   0.017,  # Heart Failure
   0.02,   # COPD
   0.08,   # Asthma
-  0.007,  # Epilepsy
   0.005,  # OUD
   0.09    # Stroke
 )
