@@ -1,0 +1,223 @@
+## ============================================================
+## MCP + domain multivariate GWAS, with mutually-adjusted axes
+## (orthogonalised in LDSC genetic space)
+## ============================================================
+
+library(GenomicSEM)
+
+setwd("/working/lab_miguelr/badeU/GenSEM_Files/GWASClean/CommonFactorGWAS")
+
+## 1) Load LDSC covariance structure and sumstats -----------------------------
+
+LDSC_MET       <- readRDS("LDSC_MET_Finalset_cleanNames.rds")
+PSYCH_sumstats <- readRDS("Sumstats_15traits_4F_ZP_cleanNames.rds")
+
+S_LD <- as.matrix(LDSC_MET$S)   # 15x15 genetic covariances
+I_LD <- as.matrix(LDSC_MET$I)   # 15x15 intercept matrix
+
+traits <- colnames(S_LD)
+traits
+
+## Sanity check: betas/SE names match LDSC trait order
+beta_cols <- paste0("beta.", traits)
+se_cols   <- paste0("se.",   traits)
+
+stopifnot(all(beta_cols %in% colnames(PSYCH_sumstats)))
+stopifnot(all(se_cols   %in% colnames(PSYCH_sumstats)))
+
+B  <- as.matrix(PSYCH_sumstats[, beta_cols])   # nSNP x 15
+SE <- as.matrix(PSYCH_sumstats[, se_cols])     # nSNP x 15
+
+n_snp <- nrow(B)
+k_tr  <- length(traits)
+
+## SNP variance under HWE (for .get_V_SNP)
+varSNP <- 2 * PSYCH_sumstats$MAF * (1 - PSYCH_sumstats$MAF)
+
+
+## 2) Pull GenomicSEM's internal .get_V_SNP -------------------------------
+
+ns_gsem   <- asNamespace("GenomicSEM")
+get_V_SNP <- get(".get_V_SNP", envir = ns_gsem)
+
+## coords = positions where I_LD is non-missing
+coords  <- which(!is.na(I_LD), arr.ind = TRUE)
+GC_mode <- "standard"   # same as userGWAS default
+
+
+## 3) Define MCP + domain axes (weights) -----------------------------------
+
+mcp_trait <- "MultisiteChronicPain"
+
+pain_gi_traits <- c("IBS", "GERD", "Migraine", "ChronicSinusitis", "Depression")
+cardio_traits  <- c("Stroke", "HF", "Hypoglycemia", "OSA")
+respir_traits  <- c("COPD", "Asthma")
+psych_traits   <- c("Insomnia", "OUD", "ADHD")
+
+## Helper: build a normalised weight vector for MCP + domain
+make_axis <- function(mcp, domain_traits, all_traits) {
+  w <- rep(0, length(all_traits))
+  names(w) <- all_traits
+  
+  w[mcp] <- 1
+  if (length(domain_traits) > 0) {
+    w[domain_traits] <- 1
+  }
+  
+  w / sqrt(sum(w^2))  # unit length
+}
+
+w_mcp_only    <- make_axis(mcp_trait, character(0),    traits)
+w_mcp_paingi  <- make_axis(mcp_trait, pain_gi_traits,  traits)
+w_mcp_cardio  <- make_axis(mcp_trait, cardio_traits,   traits)
+w_mcp_respir  <- make_axis(mcp_trait, respir_traits,   traits)
+w_mcp_psych   <- make_axis(mcp_trait, psych_traits,    traits)
+
+## Raw axes (same as your first run)
+W_axes_raw <- cbind(
+  MCP_only    = w_mcp_only,
+  MCP_PAINGI  = w_mcp_paingi,
+  MCP_CARDIO  = w_mcp_cardio,
+  MCP_RESPIR  = w_mcp_respir,
+  MCP_PSYCH   = w_mcp_psych
+)
+rownames(W_axes_raw) <- traits
+
+cat("Raw axis weight matrix W_axes_raw:\n")
+print(W_axes_raw)
+
+
+## 3b) Make mutually-adjusted (orthogonal) axes in genetic space -----------
+
+## Gram matrix in LDSC genetic space
+G <- t(W_axes_raw) %*% S_LD %*% W_axes_raw   # 5x5
+
+## Cholesky: G = R' R  (upper-triangular R)
+R <- chol(G)
+
+## Orthogonalised weights:
+## columns of W_axes_orth are uncorrelated w.r.t S_LD
+W_axes_orth <- W_axes_raw %*% solve(R)
+rownames(W_axes_orth) <- traits
+colnames(W_axes_orth) <- colnames(W_axes_raw)  # keep same axis names
+
+cat("\nOrthogonal axis weight matrix W_axes_orth (approx identity in S-space):\n")
+print(round(t(W_axes_orth) %*% S_LD %*% W_axes_orth, 3))
+
+## From now on, use the orthogonal axes
+W_axes    <- W_axes_orth
+axis_names <- colnames(W_axes)
+n_axes     <- length(axis_names)
+
+
+## 4) Preallocate output matrices ------------------------------------------
+
+axis_beta <- matrix(NA_real_, nrow = n_snp, ncol = n_axes)
+axis_se   <- matrix(NA_real_, nrow = n_snp, ncol = n_axes)
+axis_z    <- matrix(NA_real_, nrow = n_snp, ncol = n_axes)
+axis_p    <- matrix(NA_real_, nrow = n_snp, ncol = n_axes)
+
+colnames(axis_beta) <- axis_names
+colnames(axis_se)   <- axis_names
+colnames(axis_z)    <- axis_names
+colnames(axis_p)    <- axis_names
+
+
+## 5) Main SNP loop: compute V_SNP and axis-level beta/SE/z/p ---------------
+
+for (i in seq_len(n_snp)) {
+  
+  b_i  <- B[i, ]
+  se_i <- SE[i, ]
+  
+  # skip missing or zero SEs
+  if (any(!is.finite(b_i)) || any(!is.finite(se_i)) || any(se_i <= 0)) {
+    next
+  }
+  
+  # V_SNP(i): 15x15 sampling covariance across traits for SNP i
+  V_SNP_i <- get_V_SNP(
+    SE_SNP = SE,
+    I_LD   = I_LD,
+    varSNP = varSNP,
+    GC     = GC_mode,
+    coords = coords,
+    k      = k_tr,
+    i      = i
+  )
+  
+  # For each axis (MCP_only*, MCP+PAINGI*, MCP+CARDIO*, MCP+RESPIR*, MCP+PSYCH*):
+  for (a in seq_len(n_axes)) {
+    w_a <- W_axes[, a]
+    
+    beta_f <- as.numeric(crossprod(w_a, b_i))
+    var_f  <- as.numeric(t(w_a) %*% V_SNP_i %*% w_a)
+    
+    if (!is.finite(var_f) || var_f <= 0) next
+    
+    se_f <- sqrt(var_f)
+    z_f  <- beta_f / se_f
+    p_f  <- 2 * pnorm(-abs(z_f))
+    
+    axis_beta[i, a] <- beta_f
+    axis_se[i, a]   <- se_f
+    axis_z[i, a]    <- z_f
+    axis_p[i, a]    <- p_f
+  }
+  
+  if (i %% 100000 == 0) {
+    cat("Processed SNP", i, "of", n_snp, "\n")
+  }
+}
+
+
+## 6) Build final GWAS-style data frame -------------------------------------
+
+mcp_multi_gwas_orth <- data.frame(
+  SNP = PSYCH_sumstats$SNP,
+  CHR = PSYCH_sumstats$CHR,
+  BP  = PSYCH_sumstats$BP,
+  A1  = PSYCH_sumstats$A1,
+  A2  = PSYCH_sumstats$A2,
+  MAF = PSYCH_sumstats$MAF,
+  
+  beta.MCP_only    = axis_beta[, "MCP_only"],
+  se.MCP_only      = axis_se[,   "MCP_only"],
+  z.MCP_only       = axis_z[,    "MCP_only"],
+  p.MCP_only       = axis_p[,    "MCP_only"],
+  
+  beta.MCP_PAINGI  = axis_beta[, "MCP_PAINGI"],
+  se.MCP_PAINGI    = axis_se[,   "MCP_PAINGI"],
+  z.MCP_PAINGI     = axis_z[,    "MCP_PAINGI"],
+  p.MCP_PAINGI     = axis_p[,    "MCP_PAINGI"],
+  
+  beta.MCP_CARDIO  = axis_beta[, "MCP_CARDIO"],
+  se.MCP_CARDIO    = axis_se[,   "MCP_CARDIO"],
+  z.MCP_CARDIO     = axis_z[,    "MCP_CARDIO"],
+  p.MCP_CARDIO     = axis_p[,    "MCP_CARDIO"],
+  
+  beta.MCP_RESPIR  = axis_beta[, "MCP_RESPIR"],
+  se.MCP_RESPIR    = axis_se[,   "MCP_RESPIR"],
+  z.MCP_RESPIR     = axis_z[,    "MCP_RESPIR"],
+  p.MCP_RESPIR     = axis_p[,    "MCP_RESPIR"],
+  
+  beta.MCP_PSYCH   = axis_beta[, "MCP_PSYCH"],
+  se.MCP_PSYCH     = axis_se[,   "MCP_PSYCH"],
+  z.MCP_PSYCH      = axis_z[,    "MCP_PSYCH"],
+  p.MCP_PSYCH      = axis_p[,    "MCP_PSYCH"]
+)
+
+
+## 7) Save to disk -----------------------------------------------------------
+
+saveRDS(mcp_multi_gwas_orth, "MCP_MultivariateAxes_GWAS_orth.rds")
+
+write.table(
+  mcp_multi_gwas_orth,
+  file      = "MCP_MultivariateAxes_GWAS_orth.tsv",
+  sep       = "\t",
+  quote     = FALSE,
+  row.names = FALSE
+)
+
+cat("Done. Saved MCP_MultivariateAxes_GWAS_orth.rds and .tsv\n")
