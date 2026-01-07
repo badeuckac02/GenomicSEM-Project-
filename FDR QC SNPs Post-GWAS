@@ -1,0 +1,60 @@
+mcp_multi_gwas_orth <- readRDS("MCP_MultivariateAxes_GWAS_orth.rds") --> Our GWAS 
+library(dplyr)
+
+gwas <- mcp_multi_gwas_orth
+
+axis_names <- c("MCP_only", "MCP_PAINGI", "MCP_CARDIO", "MCP_RESPIR", "MCP_PSYCH")
+
+==== STEP: 2 ====
+
+# Classical GWAS threshold per axis
+bonf_axis_thresh   <- 5e-8
+
+# If you want to adjust for 5 axes jointly:
+bonf_global_thresh <- 5e-8 / length(axis_names)
+
+==== STEP 3: FDR Q VALUES ====
+
+## Per-axis BH FDR
+for (ax in axis_names) {
+  pcol <- paste0("p.", ax)           # e.g. "p.MCP_only"
+  qcol <- paste0("q_axis_", ax)      # e.g. "q_axis_MCP_only"
+  
+  gwas[[qcol]] <- p.adjust(gwas[[pcol]], method = "BH")
+}
+
+==== STEP 4: CLASIFY SNPs INTO DOMAINS ====
+
+classify_snp <- function(z_mcp, z_paingi, z_cardio, z_respir, z_psych,
+                         z_thresh = 3) {
+
+  sig <- abs(c(
+    MCP    = z_mcp,
+    PAINGI = z_paingi,
+    CARDIO = z_cardio,
+    RESPIR = z_respir,
+    PSYCH  = z_psych
+  )) >= z_thresh
+
+  if (!any(sig)) return("Unclassified")
+
+  if (sig["MCP"]    && !any(sig[-1])) return("MCP_dominant")
+  if (sig["PAINGI"] && !any(sig[c("CARDIO","RESPIR","PSYCH","MCP")])) return("PAINGI_specific")
+  if (sig["CARDIO"] && !any(sig[c("PAINGI","RESPIR","PSYCH","MCP")])) return("CARDIO_specific")
+  if (sig["RESPIR"] && !any(sig[c("PAINGI","CARDIO","PSYCH","MCP")])) return("RESPIR_specific")
+  if (sig["PSYCH"]  && !any(sig[c("PAINGI","CARDIO","RESPIR","MCP")])) return("PSYCH_specific")
+
+  return("Multi_domain")
+}
+gwas$Class <- mapply(
+  classify_snp,
+  gwas$z.MCP_only,
+  gwas$z.MCP_PAINGI,
+  gwas$z.MCP_CARDIO,
+  gwas$z.MCP_RESPIR,
+  gwas$z.MCP_PSYCH
+)
+
+# Check distribution before any FDR filtering
+table(gwas$Class)
+
