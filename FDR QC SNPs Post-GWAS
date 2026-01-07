@@ -57,4 +57,17 @@ gwas$Class <- mapply(
 
 # Check distribution before any FDR filtering
 table(gwas$Class)
+===== STEP 5:  FILTER SIGNIFICANT SNPS ====
+sig <- gwas %>%
+  filter(
+    q_axis_MCP_only   < 0.05 |
+    q_axis_MCP_PAINGI < 0.05 |
+    q_axis_MCP_CARDIO < 0.05 |
+    q_axis_MCP_RESPIR < 0.05 |
+    q_axis_MCP_PSYCH  < 0.05
+  )
+
+nrow(sig)          # ~332,645
+table(sig$Class)   # class distribution among FDR-significant SNPs
+
 
