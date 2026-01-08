@@ -1,0 +1,67 @@
+==== Clump using 1000G EUR ====
+module load plink/20220603  # or plink/1.90b7.4 if that’s what worked
+
+WD="/working/lab_miguelr/badeU/GenSEM_Files/GWASClean/CommonFactorGWAS"
+CLUMP_DIR="${WD}/Clump"
+REF_DIR="/reference/genepi/public_reference_panels/1000G_EUR_20100804/PLINK_format"
+
+cd "$WD"
+
+# Traits to clump
+TRAITS=(
+  "MCP_CARDIO"
+  "MCP_only"
+  "MCP_PAINGI"
+  "MCP_PSYCH"
+  "MCP_RESPIR"
+)
+
+echo "Starting LD clumping with explicit thresholds at $(date)"
+
+for TRAIT in "${TRAITS[@]}"; do
+  echo "---------------------------------------------"
+  echo "Clumping for trait: ${TRAIT}"
+  echo "Input file: ${CLUMP_DIR}/${TRAIT}_for_clump.txt"
+
+  for CHR in {1..22}; do
+    BFILE="${REF_DIR}/EUR_20100804_chr${CHR}"
+    echo "  Chromosome ${CHR} using reference: ${BFILE}"
+
+    plink \
+      --bfile "${BFILE}" \
+      --clump "${CLUMP_DIR}/${TRAIT}_for_clump.txt" \
+      --clump-snp-field SNP \
+      --clump-field P \
+      --clump-p1 5e-8 \
+      --clump-p2 1e-4 \
+      --clump-r2 0.1 \
+      --clump-kb 1000 \
+      --chr "${CHR}" \
+      --out "${CLUMP_DIR}/${TRAIT}_p5e8_chr${CHR}"
+  done
+
+  echo "Finished clumping per-chromosome for ${TRAIT}"
+done
+
+echo "All clumping jobs with explicit thresholds completed at $(date)"
+
+==== combine all chromosomes ====
+cd "${CLUMP_DIR}"
+
+for TRAIT in MCP_CARDIO MCP_only MCP_PAINGI MCP_PSYCH MCP_RESPIR; do
+  echo "Combining new .clumped files for ${TRAIT}"
+
+  # Use header from chr1 (p5e8)
+  head -n 1 "${TRAIT}_p5e8_chr1.clumped" > "${TRAIT}_p5e8_clumped_allchr.txt"
+
+  # Append body of all chromosomes (skip header)
+  for CHR in {1..22}; do
+    tail -n +2 "${TRAIT}_p5e8_chr${CHR}.clumped" >> "${TRAIT}_p5e8_clumped_allchr.txt"
+  done
+done
+
+==== Check counts ====
+for TRAIT in MCP_CARDIO MCP_only MCP_PAINGI MCP_PSYCH MCP_RESPIR; do
+  N=$(($(wc -l < ${TRAIT}_p5e8_clumped_allchr.txt) - 1))
+  echo "${TRAIT}: ${N} independent GWS clumps (P <= 5e-8)"
+done
