@@ -1,0 +1,233 @@
+# Core
+library(GenomicSEM)
+library(dplyr)
+library(tidyr)
+library(tibble)
+
+# For smoothing correlation matrices (recommended)
+library(psych)
+
+setwd(whatever it is)
+
+LDSC_MET <- readRDS(your multivariate ldsc object where you have all ur traits this will give you trait x trait matrix )
+
+names(LDSC_MET)
+# Expect at least: S, V
+
+===== Derive Genetic correlation matrix from S ====
+
+S <- LDSC_MET$S
+
+# Convert covariance -> correlation: R = D S D where D = diag(1/sqrt(diag(S)))
+D      <- diag(1 / sqrt(diag(S)))
+rg_mat <- D %*% S %*% D
+
+rownames(rg_mat) <- colnames(rg_mat) <- rownames(S)
+
+dim(rg_mat)
+rg_mat[1:5, 1:5]
+
+summary(diag(rg_mat))  # should be ~1
+isSymmetric(rg_mat)    # should be TRUE (up to numeric tolerance)
+
+==== Derive se(rg) using the delta method from V====
+
+m <- nrow(S)
+
+# lower-triangular index pairs (i >= j)
+idx <- which(lower.tri(S, diag = TRUE), arr.ind = TRUE)
+
+# variance vector for each element of S in the same order as idx
+# GenomicSEM stores V as the sampling covariance of vech(S)
+V <- LDSC_MET$V
+var_vec <- diag(V)
+
+stopifnot(length(var_vec) == nrow(idx))  # should match m*(m+1)/2
+
+===== Create SE matrix for S (covariance SEs)=====
+
+seS <- matrix(NA_real_, m, m)
+rownames(seS) <- colnames(seS) <- rownames(S)
+
+for (k in seq_len(nrow(idx))) {
+  i <- idx[k, "row"]
+  j <- idx[k, "col"]
+  se_ij <- sqrt(var_vec[k])
+  seS[i, j] <- se_ij
+  seS[j, i] <- se_ij
+}
+===== Delta method: SE for rg(i,j) =====
+
+# Function to extract covariance between two elements of S using V
+# where elements are indexed by (i,j) in lower triangle.
+pair_to_k <- function(i, j, idx) {
+  # force i >= j for lower triangle lookup
+  if (i < j) { tmp <- i; i <- j; j <- tmp }
+  which(idx[, "row"] == i & idx[, "col"] == j)
+}
+
+se_rg_mat <- matrix(NA_real_, m, m)
+rownames(se_rg_mat) <- colnames(se_rg_mat) <- rownames(S)
+
+for (i in 1:m) {
+  for (j in 1:m) {
+    if (i == j) {
+      se_rg_mat[i, j] <- 0
+      next
+    }
+
+    # indices in vech(S)
+    k_ij <- pair_to_k(i, j, idx)
+    k_ii <- pair_to_k(i, i, idx)
+    k_jj <- pair_to_k(j, j, idx)
+
+    # parameters
+    Sij <- S[i, j]
+    Sii <- S[i, i]
+    Sjj <- S[j, j]
+
+    denom <- sqrt(Sii * Sjj)
+    rgij  <- Sij / denom
+
+    # gradient wrt (Sij, Sii, Sjj)
+    d_Sij <- 1 / denom
+    d_Sii <- -0.5 * Sij / (Sii^(3/2) * sqrt(Sjj))
+    d_Sjj <- -0.5 * Sij / (Sjj^(3/2) * sqrt(Sii))
+
+    g <- c(d_Sij, d_Sii, d_Sjj)
+
+    # variance-covariance submatrix from V
+    K <- c(k_ij, k_ii, k_jj)
+    Vsub <- V[K, K, drop = FALSE]
+
+    var_rg <- as.numeric(t(g) %*% Vsub %*% g)
+    se_rg_mat[i, j] <- sqrt(pmax(var_rg, 0))
+  }
+}
+
+# Symmetrise
+se_rg_mat[lower.tri(se_rg_mat)] <- t(se_rg_mat)[lower.tri(se_rg_mat)]
+==== Derive SE and V matrices ====
+
+z_mat <- rg_mat / se_rg_mat
+p_mat <- 2 * pnorm(-abs(z_mat))
+
+diag(z_mat) <- NA
+diag(p_mat) <- NA
+
+===== Make a tidy table =====
+
+traits <- rownames(rg_mat)
+
+df_pairs <- expand.grid(
+  trait1 = traits,
+  trait2 = traits,
+  stringsAsFactors = FALSE
+) %>%
+  mutate(
+    rg = as.vector(rg_mat),
+    se = as.vector(se_rg_mat),
+    z  = as.vector(z_mat),
+    p  = as.vector(p_mat)
+  ) %>%
+  filter(trait1 < trait2) %>%
+  arrange(trait1, trait2)
+
+nrow(df_pairs)  # for 15 traits: 15*14/2 = 105
+head(df_pairs)
+
+==== STEP 2 SPD METHOD FOR MULTIPLE TESTING ====
+
+Extract MCP vs all traits table (rg, se, z, p)
+mcp_name <- "MultisiteChronicPain"
+
+df_mcp <- df_pairs %>%
+  filter(trait1 == mcp_name | trait2 == mcp_name) %>%
+  mutate(
+    trait = ifelse(trait1 == mcp_name, trait2, trait1)
+  ) %>%
+  select(trait, rg, se, z, p) %>%
+  arrange(trait)
+
+df_mcp
+
+
+===== Build the correlation matrix for matSpDlite (Li–Ji) key step =====
+
+# Trait × trait correlation matrix used for matSpDlite (Li–Ji)
+R_spd <- rg_mat
+
+# sanity checks
+dim(R_spd)                 # should be how many traits you have in your ldsc e.g. 15x15
+range(diag(R_spd))         # ~1
+isSymmetric(R_spd)         # TRUE (tolerance allowed)
+
+==== Run SPD ====
+
+1) R_spd_s <- psych::cor.smooth(R_spd)
+
+2) matSpDlite-style eigen decomposition
+C <- abs(R_spd_s)
+
+# remove duplicates (rare, but matches matSpDlite behavior)
+C <- C[, !duplicated(as.data.frame(C)), drop = FALSE]
+C <- C[!duplicated(as.data.frame(t(C))), , drop = FALSE]
+
+evals <- eigen(C, symmetric = TRUE, only.values = TRUE)$values
+M <- length(evals)
+L <- M - 1
+
+3) Nyholt Meff (neg eigenvalues set to 0)
+newevals <- evals
+newevals[newevals < 0] <- 0
+
+Meff_Nyholt <- M * (1 - (L * var(newevals) / M^2))
+alpha_Nyholt <- 0.05 / Meff_Nyholt
+
+4) Li & Ji Meff
+IntLine <- ifelse(newevals >= 1, 1, 0)
+NonInt  <- newevals - floor(newevals)
+
+Meff_LiJi <- sum(IntLine + NonInt)
+
+alpha_LiJi <- 0.05 / Meff_LiJi
+alpha_LiJi_exact <- 1 - (0.95)^(1 / Meff_LiJi)
+
+5) Print results cleanly 
+spd_results <- list(
+  M_original        = M,
+  Meff_Nyholt       = Meff_Nyholt,
+  Meff_LiJi         = Meff_LiJi,
+  alpha_Nyholt      = alpha_Nyholt,
+  alpha_LiJi        = alpha_LiJi,
+  alpha_LiJi_exact  = alpha_LiJi_exact
+)
+
+spd_results
+
+==== apply new p threshold ====
+
+df_mcp <- df_mcp %>%
+  mutate(
+    sig_uncorrected = p < 0.05,
+    sig_LiJi        = p < alpha_LiJi
+  ) %>%
+  arrange(p)
+
+df_mcp
+table(df_mcp$sig_LiJi)
+
+===== See which ones survived Li–Ji =====
+All that survived:
+df_mcp %>% filter(sig_LiJi)
+
+Only those that failed (if any):
+df_mcp %>% filter(!sig_LiJi)
+
+Count how many survived
+table(df_mcp$sig_LiJi)
+
+
+
+
+
