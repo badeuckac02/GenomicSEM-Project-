@@ -1,14 +1,14 @@
-cd to working directory 
+cd /working/lab_miguelr/badeU/GenSEM_Files/GWASRaw
 
 for f in \
-  MVP_R4.1000G_AGR.Phe_472.EUR.GIA.dbGaP.txt.gz \
-  MVP_R4.1000G_AGR.Phe_475.EUR.GIA.dbGaP.txt.gz \
-  MVP_R4.1000G_AGR.Phe_496_2.EUR.GIA.dbGaP.txt.gz
+  ChronicairwayobsRawMVP.gz \
+  OsteoRawMVP.gz \
+  PhemoniarawMVP.gz
 do
-  TRAIT=$(echo "$f" | sed 's/.*Phe_//' | sed 's/.EUR.*//')
-  OUT="MVP_Phe_${TRAIT}.GSEM.tsv"
+  TRAIT=$(echo "$f" | sed 's/RawMVP.gz//')
+  OUT="MVP_${TRAIT}.GSEM.tsv"
 
-  echo "▶ Rebuilding MVP_Phe_${TRAIT}"
+  echo "▶ Rebuilding MVP_${TRAIT} with Neff"
 
   zcat "$f" | awk '
   BEGIN {
@@ -36,11 +36,20 @@ do
     absbeta = (beta < 0 ? -beta : beta)
     se = (z > 0 ? absbeta / z : "NA")
 
+    ncase = $10
+    nctrl = $12
+
+    if (ncase > 0 && nctrl > 0) {
+      neff = (4 * ncase * nctrl) / (ncase + nctrl)
+    } else {
+      next
+    }
+
     if (se != "NA")
-      print $1, a1, a2, beta, se, $15, $8
+      print $1, a1, a2, beta, se, $15, neff
   }' > "$OUT"
 
   gzip -f "$OUT"
 
-  echo "✔ MVP_Phe_${TRAIT} rebuilt"
+  echo "✔ MVP_${TRAIT} rebuilt with Neff"
 done
