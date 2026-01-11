@@ -1,0 +1,117 @@
+cd /working/lab_miguelr/badeU/GenSEM_Files/mungedR
+
+for f in Asthma.gz CBronchitis.gz Chronicairwayobs.gz COPD.gz CSinusitis.gz GERD.gz HF.gz Hypotension.gz IBS.gz Insomnia.gz MCP.gz MDD.gz Migraine.gz OSA.gz Osteo.gz OUD.gz Phemonia.gz Stroke.gz; do
+  echo "▶ Adding P to $f"
+
+  python3 - << EOF
+import gzip, math, sys
+
+inp = "$f"
+out = "$f.tmp"
+
+with gzip.open(inp, 'rt') as fin:
+    header = fin.readline().rstrip("\n").split("\t")
+    try:
+        z_idx = header.index("Z")
+    except ValueError:
+        sys.exit(f"ERROR: No Z column in {inp}")
+
+    out_header = header + ["P"]
+
+    with open(out, "w") as fout:
+        fout.write("\t".join(out_header) + "\n")
+        for line in fin:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            parts = line.split("\t")
+            z = parts[z_idx]
+            try:
+                zabs = abs(float(z))
+                # Phi(z) = 0.5*(1+erf(z/sqrt(2)))
+                p = 2 * (1 - (0.5 * (1 + math.erf(zabs / math.sqrt(2)))))
+            except:
+                p = "NA"
+            parts.append(str(p))
+            fout.write("\t".join(parts) + "\n")
+EOF
+
+  gzip -f "$f.tmp"
+  mv "$f.tmp.gz" "$f"
+done
+==== Sanity : Impossible P values ====
+
+cd /working/lab_miguelr/badeU/GenSEM_Files/mungedR
+
+for f in ADHD.gz Asthma.gz CBronchitis.gz Chronicairwayobs.gz COPD.gz CSinusitis.gz GERD.gz HF.gz Hypotension.gz IBS.gz Insomnia.gz MCP.gz MDD.gz Migraine.gz OSA.gz Osteo.gz OUD.gz Phemonia.gz Stroke.gz Hypoglycemia.sumstats.gz; do
+  echo "==== Range check: $f ===="
+  python3 - << EOF
+import gzip, sys, math
+fn="$f"
+with gzip.open(fn,'rt') as fin:
+    hdr=fin.readline().rstrip("\n").split("\t")
+    pidx=hdr.index("P")
+    bad=0; n=0
+    for line in fin:
+        n+=1
+        p=line.rstrip("\n").split("\t")[pidx]
+        if p=="NA" or p=="":
+            continue
+        try:
+            pv=float(p)
+        except:
+            bad+=1
+            if bad<=3: print("Non-numeric P:", p)
+            continue
+        if not (0.0 < pv <= 1.0):
+            bad+=1
+            if bad<=3: print("Out-of-range P:", pv)
+    if bad==0:
+        print("OK:", fn, "checked rows:", n)
+    else:
+        print("BAD:", fn, "bad rows:", bad, "checked rows:", n)
+EOF
+done
+
+==== Patch for extremely rare variants ====
+
+cd /working/lab_miguelr/badeU/GenSEM_Files/mungedR
+
+for f in ADHD.gz Asthma.gz CBronchitis.gz Chronicairwayobs.gz COPD.gz CSinusitis.gz GERD.gz HF.gz Hypoglycemia.gz Hypotension.gz IBS.gz Insomnia.gz MCP.gz MDD.gz Migraine.gz OSA.gz Osteo.gz OUD.gz Phemonia.gz Stroke.gz; do =======> files of interest 
+  echo "▶ Flooring P zeros in $f"
+
+  python3 - << EOF
+import gzip, sys
+
+fn="$f"
+out=fn+".tmp"
+PFLOOR=1e-300
+
+with gzip.open(fn,'rt') as fin:
+    hdr=fin.readline().rstrip("\n").split("\t")
+    if "P" not in hdr:
+        sys.exit(f"ERROR: No P column in {fn}. Add P first, then patch.")
+    pidx=hdr.index("P")
+
+    with open(out,'w') as fout:
+        fout.write("\t".join(hdr) + "\n")
+        for line in fin:
+            parts=line.rstrip("\n").split("\t")
+            if len(parts) <= pidx:
+                fout.write("\t".join(parts) + "\n")
+                continue
+            p=parts[pidx]
+            if p not in ("NA",""):
+                try:
+                    pv=float(p)
+                    if pv <= 0.0:
+                        parts[pidx]=str(PFLOOR)
+                except:
+                    pass
+            fout.write("\t".join(parts) + "\n")
+EOF
+
+  gzip -f "$f.tmp"
+  mv "$f.tmp.gz" "$f"
+done
+
