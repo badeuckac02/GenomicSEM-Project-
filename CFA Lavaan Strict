@@ -1,0 +1,99 @@
+
+library(lavaan)
+library(Matrix)
+
+setwd("/working/lab_miguelr/badeU/GenSEM_Files/mungedR")
+
+# ---- Trait order (ONLY used if S is unnamed) ----
+trait.names <- c(
+  "ADHD","Chronic_Sinsts","Hypoglycemia","Multisite_Chronic_Pain","Depression",
+  "GERD","IBS","Insomnia","Migraine","OSA","IHD","COPD","Asthma","OUD",
+  "Pneumonia","Hypotension","Stroke"
+)
+
+# ---- Load LDSC object ----
+obj <- readRDS("LDSC_MET_Updated.rds")
+S   <- obj$S
+stopifnot(is.matrix(S), nrow(S) == ncol(S))
+
+# ---- If unnamed, assign names ----
+if (is.null(rownames(S)) || is.null(colnames(S))) {
+  if (length(trait.names) != nrow(S)) {
+    stop("S is unnamed and trait.names length != nrow(S). Paste the exact LDSC trait order.")
+  }
+  rownames(S) <- trait.names
+  colnames(S) <- trait.names
+}
+
+rownames(S) <- trimws(rownames(S))
+colnames(S) <- trimws(colnames(S))
+
+# ---- Build rg matrix and enforce symmetry ----
+rg_multi <- cov2cor(S)
+rg_multi <- (rg_multi + t(rg_multi)) / 2
+diag(rg_multi) <- 1
+
+# Align dimnames (if same set but different order)
+if (!identical(rownames(rg_multi), colnames(rg_multi))) {
+  if (setequal(rownames(rg_multi), colnames(rg_multi))) {
+    rg_multi <- rg_multi[rownames(rg_multi), rownames(rg_multi), drop = FALSE]
+  } else {
+    stop("Row/col names differ and are not the same set.")
+  }
+}
+
+stopifnot(isSymmetric(rg_multi, tol = 1e-12, check.attributes = FALSE))
+
+# ---- nearPD smoothing ----
+rg_pd <- as.matrix(nearPD(rg_multi, corr = TRUE, keepDiag = TRUE)$mat)
+rg_pd <- (rg_pd + t(rg_pd)) / 2
+diag(rg_pd) <- 1
+stopifnot(isSymmetric(rg_pd, tol = 1e-12, check.attributes = FALSE))
+
+# ---- Strict 4-factor CFA (MCP loads on all factors) ----
+model_4F_strict <- '
+  Cardio =~ Stroke + IHD + Hypotension + Hypoglycemia + OSA + Multisite_Chronic_Pain
+  Somatic =~ IBS + GERD + Chronic_Sinsts + Depression + Migraine + Multisite_Chronic_Pain
+  Respiratory =~ Pneumonia + COPD + Asthma + Multisite_Chronic_Pain
+  NeuroPsych =~ OUD + ADHD + Insomnia + Multisite_Chronic_Pain
+
+  Cardio ~~ Somatic + Respiratory + NeuroPsych
+  Somatic ~~ Respiratory + NeuroPsych
+  Respiratory ~~ NeuroPsych
+'
+
+vars_in_model <- unique(lavNames(model_4F_strict, type = "ov"))
+missing_vars  <- setdiff(vars_in_model, colnames(rg_pd))
+if (length(missing_vars) > 0) stop("Missing in rg matrix: ", paste(missing_vars, collapse = ", "))
+
+rg_pd2 <- rg_pd[vars_in_model, vars_in_model, drop = FALSE]
+rg_pd2 <- (rg_pd2 + t(rg_pd2)) / 2
+diag(rg_pd2) <- 1
+
+# ---- Fit CFA ----
+fit_4F_strict <- cfa(
+  model       = model_4F_strict,
+  sample.cov  = rg_pd2,
+  sample.nobs = 100000,
+  std.lv      = TRUE
+)
+
+cat("\n=== Fit indices ===\n")
+print(fitMeasures(fit_4F_strict, c("chisq","df","pvalue","cfi","tli","rmsea","srmr","aic","bic")))
+
+pe <- parameterEstimates(fit_4F_strict, standardized = TRUE)
+
+cat("\n=== Loadings involving Insomnia ===\n")
+print(pe[pe$op == "=~" & pe$rhs == "Insomnia", c("lhs","rhs","est","std.all")])
+
+cat("\nAny negative residual variances? ")
+neg_resid <- pe[pe$op=="~~" & pe$lhs==pe$rhs & pe$lhs %in% vars_in_model & pe$est < 0,
+                c("lhs","est","std.all")]
+print(nrow(neg_resid) > 0)
+if (nrow(neg_resid) > 0) print(neg_resid)
+
+cat("\nAny standardized loadings > 1? ")
+load_over1 <- pe[pe$op=="=~" & !is.na(pe$std.all) & abs(pe$std.all) > 1,
+                 c("lhs","rhs","est","std.all")]
+print(nrow(load_over1) > 0)
+if (nrow(load_over1) > 0) print(load_over1)
