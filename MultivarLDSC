@@ -1,19 +1,13 @@
 # ============================================================
 # Multivariate LDSC using GenomicSEM
-# Working directory: mungedR
+# Robust version: uses absolute paths to traits
 # ============================================================
 
 library(GenomicSEM)
 
-# ------------------------------------------------------------
-# Set working directory
-# ------------------------------------------------------------
-setwd("/working/lab_miguelr/badeU/GenSEM_Files/mungedR")
+munged_dir <- "/working/lab_miguelr/badeU/GenSEM_Files/mungedR"
 
-# ------------------------------------------------------------
-# Munged summary statistics (files must exist here)
-# ------------------------------------------------------------
-traits <- c(
+traits <- file.path(munged_dir, c(
   "ADHD.gz",
   "CSinusitis.gz",
   "Hypoglycemia.gz",
@@ -24,12 +18,14 @@ traits <- c(
   "Insomnia.gz",
   "Migraine.gz",
   "OSA.gz",
-  "HF.gz",
+  "IHD.gz",
   "COPD.gz",
   "Asthma.gz",
   "OUD.gz",
+  "Pneumonia.gz",
+  "Hypotension.gz",
   "Stroke.gz"
-)
+))
 
 trait.names <- c(
   "ADHD",
@@ -42,72 +38,67 @@ trait.names <- c(
   "Insomnia",
   "Migraine",
   "OSA",
-  "HF",
+  "IHD",
   "COPD",
   "Asthma",
   "OUD",
+  "Pneumonia",
+  "Hypotension",
   "Stroke"
 )
 
 stopifnot(length(traits) == length(trait.names))
 
-# ------------------------------------------------------------
-# Sample prevalence (same order as traits)
-# ------------------------------------------------------------
 sample.prev <- c(
-  0.3645,  # ADHD
-  0.0906,  # Chronic sinusitis
-  0.0128,  # Hypoglycemia
-  NA,      # Multisite chronic pain (non-CC / complex)
-  0.1318,  # Depression
-  0.3419,  # GERD
-  0.0500,  # IBS
-  0.1925,  # Insomnia
-  0.9168,  # Migraine (ascertained)
-  0.2944,  # OSA
-  0.051,   # HF
-  0.0588,  # COPD
-  0.0886,  # Asthma
-  0.121,   # OUD
-  0.0332   # Stroke
+  0.3645,
+  0.0906,
+  0.0128,
+  NA,
+  0.1318,
+  0.3419,
+  0.0500,
+  0.1925,
+  0.9168,
+  0.2944,
+  0.3390,
+  0.0588,
+  0.0886,
+  0.1210,
+  0.1035,
+  0.0937,
+  0.0332
 )
 
-# ------------------------------------------------------------
-# Population prevalence (same order as traits)
-# ------------------------------------------------------------
 population.prev <- c(
-  0.028,  # ADHD
-  0.10,   # Chronic sinusitis
-  NA,     # Hypoglycemia (no robust pop prev)
-  NA,     # Multisite chronic pain
-  0.064,  # Depression
-  0.14,   # GERD/Acid reflux
-  0.092,  # Irritable Bowel Syndrome (IBS)
-  0.06,   # Insomnia
-  0.11,   # Migraine
-  NA,   # OSA
-  0.017,  # Heart Failure
-  0.02,   # COPD
-  0.08,   # Asthma
-  0.005,  # OUD
-  0.09    # Stroke
+  0.028,
+  0.10,
+  NA,
+  NA,
+  0.064,
+  0.14,
+  0.092,
+  0.06,
+  0.11,
+  NA,
+  0.03,
+  0.02,
+  0.08,
+  0.005,
+  0.014,
+  0.06,
+  0.09
 )
 
 stopifnot(length(sample.prev) == length(traits))
 stopifnot(length(population.prev) == length(traits))
 
-# ------------------------------------------------------------
-# LD score directories (EUR)
-# ------------------------------------------------------------
 ld  <- "/working/lab_miguelr/badeU/eur_w_ld_chr/"
 wld <- "/working/lab_miguelr/badeU/eur_w_ld_chr/"
 
-# Optional: quick file existence check
-print(data.frame(traits = traits, exists = file.exists(traits)))
+# file existence check (absolute paths)
+print(data.frame(traits = basename(traits), path = traits, exists = file.exists(traits)))
+stopifnot(all(file.exists(traits)))
 
-# ------------------------------------------------------------
-# Run multivariate LDSC
-# ------------------------------------------------------------
 cat("============================================\n")
 cat("Running multivariate LDSC\n")
 cat("Number of traits:", length(traits), "\n")
@@ -122,14 +113,9 @@ LDSC_MET <- ldsc(
   wld             = wld
 )
 
-# ------------------------------------------------------------
-# Save output
-# ------------------------------------------------------------
-saveRDS(LDSC_MET, file = "LDSC_MET_Finalset.rds")
+saveRDS(LDSC_MET, file = file.path(munged_dir, "LDSC_MET_Updated.rds"))
 
 cat("============================================\n")
 cat("✅ Multivariate LDSC completed successfully\n")
-cat("Saved as LDSC_MET_Finalset.rds\n")
+cat("Saved as LDSC_MET_Updated.rds\n")
 cat("============================================\n")
-
-
