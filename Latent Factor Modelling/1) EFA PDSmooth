@@ -1,0 +1,177 @@
+#!/usr/bin/env Rscript
+
+suppressPackageStartupMessages({
+  library(Matrix)
+  library(psych)
+})
+
+# -----------------------------
+# 0) Paths
+# -----------------------------
+in_rds  <- "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/LDSC_MET_Updated.rds"
+out_dir <- "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/EFA_repro"
+dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+
+log_file <- file.path(out_dir, "EFA_repro.log")
+sink(log_file, split = TRUE)
+
+cat("==== Reproducible EFA pipeline (LDSC rg matrix) ====\n")
+cat("Input RDS:", in_rds, "\n")
+cat("Output dir:", out_dir, "\n")
+cat("Time:", format(Sys.time()), "\n\n")
+
+set.seed(1)
+
+# -----------------------------
+# 1) Load LDSC object + extract S
+# -----------------------------
+obj <- readRDS(in_rds)
+cat("Top-level names(obj):", paste(names(obj), collapse = ", "), "\n")
+
+# Your object had: V, S, I, N, m
+stopifnot(!is.null(obj$S))
+S <- as.matrix(obj$S)
+cat("S dim:", paste(dim(S), collapse = " x "), "\n\n")
+
+# -----------------------------
+# 2) Convert S -> correlation matrix R (rg-style)
+# -----------------------------
+R_raw <- cov2cor(S)
+diag(R_raw) <- 1
+R_raw <- (R_raw + t(R_raw)) / 2
+
+cat("R_raw range:", range(R_raw, na.rm = TRUE), "\n")
+cat("Min eigenvalue (raw):",
+    min(eigen(R_raw, symmetric = TRUE, only.values = TRUE)$values), "\n\n")
+
+saveRDS(R_raw, file.path(out_dir, "R_raw_cor.rds"))
+write.table(R_raw, file.path(out_dir, "R_raw_cor.tsv"),
+            sep = "\t", quote = FALSE)
+
+# -----------------------------
+# 3) Smoothing step (what we did)
+#    A) Explicit nearPD smoothing (recommended + reproducible)
+# -----------------------------
+R_pd <- as.matrix(nearPD(R_raw, corr = TRUE, keepDiag = TRUE)$mat)
+diag(R_pd) <- 1
+R_pd <- (R_pd + t(R_pd)) / 2
+
+cat("Min eigenvalue (nearPD):",
+    min(eigen(R_pd, symmetric = TRUE, only.values = TRUE)$values), "\n\n")
+
+saveRDS(R_pd, file.path(out_dir, "R_nearPD_cor.rds"))
+write.table(R_pd, file.path(out_dir, "R_nearPD_cor.tsv"),
+            sep = "\t", quote = FALSE)
+
+# NOTE:
+# In your run, psych also printed:
+# "Matrix was not positive definite, smoothing was done"
+# because fa()/fa.parallel() will call cor.smooth() internally if needed.
+# By providing R_pd, we reduce internal smoothing variation.
+
+# -----------------------------
+# 4) Parallel analysis + elbow plot (PNG)
+#    (what you asked for: "how many factors supported + elbow PNG")
+# -----------------------------
+png(file.path(out_dir, "parallel_analysis_elbow.png"),
+    width = 1800, height = 1400, res = 200)
+
+pa <- fa.parallel(
+  R_pd,
+  n.obs = 1e6,       # pragmatic constant for rg matrices
+  fm = "pa",
+  fa = "fa",
+  SMC = FALSE,
+  error.bars = FALSE,
+  n.iter = 100
+)
+
+dev.off()
+
+cat("Parallel analysis suggested nfactors:", pa$nfact, "\n\n")
+saveRDS(pa, file.path(out_dir, "parallel_analysis_object.rds"))
+
+# Optional: simple scree plot of eigenvalues
+ev <- eigen(R_pd, symmetric = TRUE, only.values = TRUE)$values
+png(file.path(out_dir, "scree_plot.png"),
+    width = 1800, height = 1400, res = 200)
+plot(ev, type = "b", pch = 19,
+     xlab = "Index", ylab = "Eigenvalue",
+     main = "Scree plot (nearPD-smoothed rg correlation matrix)")
+abline(h = 1, lty = 2)
+dev.off()
+
+# -----------------------------
+# 5) EFA: 3-factor solution (PA + oblimin)
+#    (this was admissible and interpretable)
+# -----------------------------
+efa3 <- fa(
+  R_pd,
+  nfactors = 3,
+  fm = "pa",
+  rotate = "oblimin",
+  SMC = FALSE,
+  scores = "none"
+)
+
+cat("==== EFA 3-factor (PA, oblimin) ====\n")
+print(efa3)
+cat("\nLoadings (cutoff=0.30, sorted):\n")
+print(efa3$loadings, cutoff = 0.30, sort = TRUE)
+
+cat("\nCommunalities:\n"); print(efa3$communality)
+cat("\nUniquenesses:\n"); print(efa3$uniquenesses)
+cat("\nHeywood:\n"); print(efa3$Heywood)
+cat("\n\n")
+
+saveRDS(efa3, file.path(out_dir, "efa_3f_pa_oblimin.rds"))
+sink(file.path(out_dir, "efa_3f_pa_oblimin_loadings.txt"))
+print(efa3$loadings, cutoff = 0.30, sort = TRUE)
+sink()
+
+# -----------------------------
+# 6) EFA: 4-factor solution (PA + oblimin)
+#    (this ended up admissible for the full matrix after smoothing)
+# -----------------------------
+efa4 <- fa(
+  R_pd,
+  nfactors = 4,
+  fm = "pa",
+  rotate = "oblimin",
+  SMC = FALSE,
+  scores = "none"
+)
+
+cat("==== EFA 4-factor (PA, oblimin) ====\n")
+print(efa4)
+cat("\nLoadings (cutoff=0.30, sorted):\n")
+print(efa4$loadings, cutoff = 0.30, sort = TRUE)
+
+cat("\nCommunalities:\n"); print(efa4$communality)
+cat("\nUniquenesses:\n"); print(efa4$uniquenesses)
+cat("\nHeywood:\n"); print(efa4$Heywood)
+cat("\n\n")
+
+saveRDS(efa4, file.path(out_dir, "efa_4f_pa_oblimin.rds"))
+sink(file.path(out_dir, "efa_4f_pa_oblimin_loadings.txt"))
+print(efa4$loadings, cutoff = 0.30, sort = TRUE)
+sink()
+
+# -----------------------------
+# 7) Convenience: MCP loadings extracted numerically
+# -----------------------------
+trait_mcp <- "Multisite_Chronic_Pain"
+
+if (trait_mcp %in% rownames(as.matrix(efa3$loadings))) {
+  cat("MCP loadings (3F):\n")
+  print(as.matrix(efa3$loadings)[trait_mcp, ])
+  cat("\n")
+}
+if (trait_mcp %in% rownames(as.matrix(efa4$loadings))) {
+  cat("MCP loadings (4F):\n")
+  print(as.matrix(efa4$loadings)[trait_mcp, ])
+  cat("\n")
+}
+
+cat("DONE.\n")
+sink()
