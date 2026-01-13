@@ -1,4 +1,14 @@
 
+# ============================================================
+# CFA on LDSC genetic correlation matrix (lavaan)
+# - Loads: /working/lab_miguelr/badeU/GenSEM_Files/mungedR/LDSC_MET_Updated.rds
+# - Builds rg from obj$S, enforces symmetry, smooths to PD via nearPD
+# - Fits strict 4-factor CFA with factors:
+#     Cardio, Neuroinflammatory, Respiratory, Psychiatric
+#   (MCP loads on all factors)
+# - Prints fit indices + latent factor correlations + sanity checks
+# ============================================================
+
 library(lavaan)
 library(Matrix)
 
@@ -11,9 +21,12 @@ trait.names <- c(
   "Pneumonia","Hypotension","Stroke"
 )
 
-# ---- Load LDSC object ----
-obj <- readRDS("LDSC_MET_Updated.rds")
-S   <- obj$S
+# ---- Load LDSC object (absolute path) ----
+obj_path <- "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/LDSC_MET_Updated.rds"
+obj <- readRDS(obj_path)
+
+if (is.null(obj$S)) stop("Loaded RDS but obj$S is NULL. Check the object structure: str(obj)")
+S <- obj$S
 stopifnot(is.matrix(S), nrow(S) == ncol(S))
 
 # ---- If unnamed, assign names ----
@@ -44,7 +57,7 @@ if (!identical(rownames(rg_multi), colnames(rg_multi))) {
 
 stopifnot(isSymmetric(rg_multi, tol = 1e-12, check.attributes = FALSE))
 
-# ---- nearPD smoothing ----
+# ---- nearPD smoothing (corr=TRUE because rg is a correlation matrix) ----
 rg_pd <- as.matrix(nearPD(rg_multi, corr = TRUE, keepDiag = TRUE)$mat)
 rg_pd <- (rg_pd + t(rg_pd)) / 2
 diag(rg_pd) <- 1
@@ -53,22 +66,25 @@ stopifnot(isSymmetric(rg_pd, tol = 1e-12, check.attributes = FALSE))
 # ---- Strict 4-factor CFA (MCP loads on all factors) ----
 model_4F_strict <- '
   Cardio =~ Stroke + IHD + Hypotension + Hypoglycemia + OSA + Multisite_Chronic_Pain
-  Somatic =~ IBS + GERD + Chronic_Sinsts + Depression + Migraine + Multisite_Chronic_Pain
+  Neuroinflammatory =~ IBS + GERD + Chronic_Sinsts + Migraine + Multisite_Chronic_Pain
   Respiratory =~ Pneumonia + COPD + Asthma + Multisite_Chronic_Pain
-  NeuroPsych =~ OUD + ADHD + Insomnia + Multisite_Chronic_Pain
+  Psychiatric =~ OUD + ADHD + Insomnia + Depression + Multisite_Chronic_Pain
 
-  Cardio ~~ Somatic + Respiratory + NeuroPsych
-  Somatic ~~ Respiratory + NeuroPsych
-  Respiratory ~~ NeuroPsych
+  Cardio ~~ Neuroinflammatory + Respiratory + Psychiatric
+  Neuroinflammatory ~~ Respiratory + Psychiatric
+  Respiratory ~~ Psychiatric
 '
 
+# ---- Ensure model variables are present in rg matrix ----
 vars_in_model <- unique(lavNames(model_4F_strict, type = "ov"))
 missing_vars  <- setdiff(vars_in_model, colnames(rg_pd))
 if (length(missing_vars) > 0) stop("Missing in rg matrix: ", paste(missing_vars, collapse = ", "))
 
+# Subset rg to exactly the manifest variables in the model (and in that order)
 rg_pd2 <- rg_pd[vars_in_model, vars_in_model, drop = FALSE]
 rg_pd2 <- (rg_pd2 + t(rg_pd2)) / 2
 diag(rg_pd2) <- 1
+stopifnot(isSymmetric(rg_pd2, tol = 1e-12, check.attributes = FALSE))
 
 # ---- Fit CFA ----
 fit_4F_strict <- cfa(
@@ -78,22 +94,42 @@ fit_4F_strict <- cfa(
   std.lv      = TRUE
 )
 
+# ---- Fit indices ----
 cat("\n=== Fit indices ===\n")
 print(fitMeasures(fit_4F_strict, c("chisq","df","pvalue","cfi","tli","rmsea","srmr","aic","bic")))
 
+# ---- Latent factor correlations (matrix) ----
+cat("\n=== Latent factor correlations (cor.lv) ===\n")
+print(round(lavInspect(fit_4F_strict, "cor.lv"), 3))
+
+# ---- Pairwise factor correlation table (standardized) ----
 pe <- parameterEstimates(fit_4F_strict, standardized = TRUE)
+latent_vars <- c("Cardio","Neuroinflammatory","Respiratory","Psychiatric")
 
-cat("\n=== Loadings involving Insomnia ===\n")
-print(pe[pe$op == "=~" & pe$rhs == "Insomnia", c("lhs","rhs","est","std.all")])
+fac_cor <- pe[
+  pe$op == "~~" &
+    pe$lhs %in% latent_vars &
+    pe$rhs %in% latent_vars &
+    pe$lhs != pe$rhs,
+  c("lhs","rhs","est","std.all")
+]
 
+cat("\n=== Pairwise factor correlations ===\n")
+print(fac_cor[order(fac_cor$lhs, fac_cor$rhs), ], row.names = FALSE)
+
+# ---- Sanity checks ----
 cat("\nAny negative residual variances? ")
-neg_resid <- pe[pe$op=="~~" & pe$lhs==pe$rhs & pe$lhs %in% vars_in_model & pe$est < 0,
-                c("lhs","est","std.all")]
+neg_resid <- pe[
+  pe$op=="~~" & pe$lhs==pe$rhs & pe$lhs %in% vars_in_model & pe$est < 0,
+  c("lhs","est","std.all")
+]
 print(nrow(neg_resid) > 0)
 if (nrow(neg_resid) > 0) print(neg_resid)
 
 cat("\nAny standardized loadings > 1? ")
-load_over1 <- pe[pe$op=="=~" & !is.na(pe$std.all) & abs(pe$std.all) > 1,
-                 c("lhs","rhs","est","std.all")]
+load_over1 <- pe[
+  pe$op=="=~" & !is.na(pe$std.all) & abs(pe$std.all) > 1,
+  c("lhs","rhs","est","std.all")
+]
 print(nrow(load_over1) > 0)
 if (nrow(load_over1) > 0) print(load_over1)
