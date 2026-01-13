@@ -1,0 +1,66 @@
+library(GenomicSEM)
+library(data.table)
+
+setwd("/working/lab_miguelr/badeU/GenSEM_Files/mungedR")
+
+## -----------------------------
+## Inputs you provided
+## -----------------------------
+ref <- "/working/lab_miguelr/badeU/Reference/reference.1000G.maf.0.005.txt.gz"
+
+files <- c(
+  ADHD       = "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/ADHD.gz",
+  CSinusitis = "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/CSinusitis.gz",
+  GERD       = "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/GERD.gz",
+  MCP        = "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/MCP.gz",
+  MDD        = "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/MDD.gz",
+  Insomnia   = "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/Insomnia.gz",
+  OUD        = "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/OUD.gz",
+  Migraine   = "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/Migraine.gz",
+  IBS        = "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/IBS.gz"
+)
+
+trait.names <- names(files)
+
+## -----------------------------
+## Quick sanity check: confirm these look like LDSC-munged files
+## (SNP/N/Z/A1/A2 present)
+## -----------------------------
+hdr <- names(fread(files[1], nrows = 1))
+print(hdr)
+
+need_cols <- c("SNP","N","Z","A1","A2")
+if (!all(need_cols %in% hdr)) {
+  stop(
+    "Your files do not look like LDSC-munged Z/N files. ",
+    "Expected columns: ", paste(need_cols, collapse=", "),
+    " but got: ", paste(hdr, collapse=", "),
+    "\nIf these are raw GWAS files with BETA/SE, we need a different sumstats() call."
+  )
+}
+
+## -----------------------------
+## sumstats(): Z/N (linprob) mode
+## -----------------------------
+mv_sumstats <- sumstats(
+  files       = unname(files),
+  ref         = ref,
+  trait.names = trait.names,
+
+  ## Z/N munged format -> treat as linprob/Z-based
+  linprob     = rep(TRUE, length(files)),
+
+  ## Use SNP-specific N from the munged files (recommended here)
+  N           = rep(NA, length(files)),
+
+  ## Not logistic SEs in this mode
+  se.logit    = rep(FALSE, length(files)),
+
+  info.filter = 0.6,
+  maf.filter  = 0.01,
+  keep.indel  = FALSE,
+  parallel    = FALSE
+)
+
+saveRDS(mv_sumstats, "Sumstats_9traits_MCPdomains.rds")
+cat("Saved: Sumstats_9traits_MCPdomains.rds\n")
