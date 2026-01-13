@@ -1,0 +1,139 @@
+#!/usr/bin/env Rscript
+
+suppressPackageStartupMessages({
+  library(GenomicSEM)
+  library(GNA)
+})
+
+# ----------------------------
+# INPUT
+# ----------------------------
+rds_in  <- "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/LDSC_MET_Updated.rds"
+out_dir <- "/working/lab_miguelr/badeU/GenSEM_Files/mungedR/GNA_out_subset_IBS_Sinus_Mig_GERD_MCP"
+dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+
+# ----------------------------
+# Subset traits (MUST match colnames(covstruc$S) exactly)
+# ----------------------------
+keep_traits0 <- c(
+  "IBS",
+  "Chronic_Sinusitis",
+  "Migraine",
+  "GERD",
+  "Multisite_Chronic_Pain"
+)
+
+# ----------------------------
+# Load LDSC object (robust to $results wrapper)
+# ----------------------------
+LDSC_MET <- readRDS(rds_in)
+
+covstruc <- LDSC_MET
+if (is.null(covstruc$S) && !is.null(covstruc$results)) covstruc <- covstruc$results
+if (is.null(covstruc$S)) stop("No $S found in LDSC object (or in $results).")
+
+S <- covstruc$S
+V <- covstruc$V
+
+# Ensure trait names exist
+tn <- colnames(S)
+if (is.null(tn)) tn <- rownames(S)
+if (is.null(tn)) stop("S has no row/colnames; cannot subset safely.")
+
+# Validate keep list exists
+missing <- setdiff(keep_traits0, tn)
+if (length(missing) > 0) {
+  stop(paste0(
+    "These keep_traits0 are not in S: ", paste(missing, collapse = ", "),
+    "\nCheck exact available names, e.g. head(colnames(S)):\n",
+    paste(head(tn, 30), collapse = ", ")
+  ))
+}
+
+idx <- match(keep_traits0, tn)
+if (anyNA(idx)) stop("Internal error: NA in idx after match().")
+
+# ----------------------------
+# Subset S + enforce symmetry + enforce names
+# ----------------------------
+S_sub <- S[idx, idx, drop = FALSE]
+S_sub <- (S_sub + t(S_sub)) / 2
+rownames(S_sub) <- colnames(S_sub) <- keep_traits0
+
+# ----------------------------
+# Subset V via deterministic vech mapping
+# k(i,j) = i*(i-1)/2 + j for i>=j
+# ----------------------------
+V_sub <- NULL
+if (!is.null(V)) {
+
+  p_full <- ncol(S)
+  m_full <- p_full * (p_full + 1) / 2
+
+  if (nrow(V) != m_full || ncol(V) != m_full) {
+    stop("V has unexpected dimensions; expected m_full x m_full where m_full = p*(p+1)/2.")
+  }
+
+  p_sub <- length(idx)
+
+  vech_index <- function(i, j) {
+    # assumes i >= j
+    i * (i - 1) / 2 + j
+  }
+
+  keep_k <- integer(p_sub * (p_sub + 1) / 2)
+  kk <- 0
+
+  for (a in 1:p_sub) {
+    for (b in 1:a) {
+      kk <- kk + 1
+      i_full <- idx[a]
+      j_full <- idx[b]
+      if (i_full < j_full) { tmp <- i_full; i_full <- j_full; j_full <- tmp }
+      keep_k[kk] <- vech_index(i_full, j_full)
+    }
+  }
+
+  V_sub <- V[keep_k, keep_k, drop = FALSE]
+}
+
+# ----------------------------
+# Preserve original covstruc structure
+# ----------------------------
+cov_sub <- covstruc
+cov_sub$S <- S_sub
+cov_sub$V <- V_sub
+
+if (!is.null(cov_sub$trait.names)) cov_sub$trait.names <- keep_traits0
+if (!is.null(cov_sub$traits))      cov_sub$traits      <- keep_traits0
+
+# ----------------------------
+# Run GNA trait network
+# ----------------------------
+png(file.path(out_dir, "traitNET_subset_circle.png"),
+    width = 2400, height = 1800, res = 250)
+
+MET_sub <- traitNET(
+  covstruc     = cov_sub,
+  fix_omega    = "full",
+  prune        = TRUE,
+  p.adjust     = "fdr",
+  alpha        = 0.05,
+  reestimate   = TRUE,
+  recursive    = TRUE,
+  graph_layout = "circle",
+  toler        = NULL
+)
+
+try(plot(MET_sub), silent = TRUE)
+dev.off()
+
+saveRDS(MET_sub, file.path(out_dir, "METnetwork_subset_traitNET.rds"))
+
+cat("Saved:\n",
+    file.path(out_dir, "METnetwork_subset_traitNET.rds"), "\n",
+    file.path(out_dir, "traitNET_subset_circle.png"), "\n")
+
+cat("Subset S dim:", paste(dim(cov_sub$S), collapse="x"), "\n")
+cat("Subset traits:\n")
+print(colnames(cov_sub$S))
