@@ -1,0 +1,189 @@
+## ============================================================
+## MCP + domain multivariate GWAS, mutually-adjusted axes
+## for 9 traits: LDSC labels != Sumstats labels (handled via map)
+## ============================================================
+
+library(GenomicSEM)
+
+setwd("/working/lab_miguelr/badeU/GenSEM_Files/GWASClean/CommonFactorGWAS")
+
+## 1) Load LDSC + Sumstats ---------------------------------------------------
+
+LDSC_MET <- readRDS("/working/lab_miguelr/badeU/GenSEM_Files/mungedR/LDSC_MET_9traits_Updated.rds")
+SS       <- readRDS("/working/lab_miguelr/badeU/GenSEM_Files/mungedR/Sumstats_9traits_MCPdomains.rds")
+
+S_LD <- as.matrix(LDSC_MET$S)
+I_LD <- as.matrix(LDSC_MET$I)
+
+traits_ldsc <- colnames(S_LD)
+cat("Traits in LDSC:\n")
+print(traits_ldsc)
+
+## 2) Map LDSC trait labels -> SS suffix labels ------------------------------
+## SS has beta/se columns: ADHD, CSinusitis, GERD, MCP, MDD, Insomnia, OUD, Migraine, IBS
+
+ldsc_to_ss <- c(
+  "ADHD"                   = "ADHD",
+  "Chronic_Sinusitis"      = "CSinusitis",
+  "Multisite_Chronic_Pain" = "MCP",
+  "Depression"             = "MDD",
+  "GERD"                   = "GERD",
+  "IBS"                    = "IBS",
+  "Insomnia"               = "Insomnia",
+  "Migraine"               = "Migraine",
+  "OUD"                    = "OUD"
+)
+
+## ensure every LDSC trait is mapped
+missing_map <- setdiff(traits_ldsc, names(ldsc_to_ss))
+if (length(missing_map) > 0) {
+  stop(paste("Missing mapping for LDSC traits:", paste(missing_map, collapse = ", ")))
+}
+
+traits_ss <- unname(ldsc_to_ss[traits_ldsc])
+
+beta_cols <- paste0("beta.", traits_ss)
+se_cols   <- paste0("se.",   traits_ss)
+
+## hard checks
+stopifnot(all(beta_cols %in% colnames(SS)))
+stopifnot(all(se_cols   %in% colnames(SS)))
+
+B  <- as.matrix(SS[, beta_cols])  # nSNP x k
+SE <- as.matrix(SS[, se_cols])    # nSNP x k
+
+n_snp <- nrow(B)
+k_tr  <- length(traits_ldsc)
+
+stopifnot(all(c("MAF","SNP","CHR","BP","A1","A2") %in% colnames(SS)))
+varSNP <- 2 * SS$MAF * (1 - SS$MAF)
+
+## 3) Get V_SNP (sample-overlap aware via LDSC intercept I) ------------------
+
+ns_gsem   <- asNamespace("GenomicSEM")
+get_V_SNP <- get(".get_V_SNP", envir = ns_gsem)
+
+coords  <- which(!is.na(I_LD), arr.ind = TRUE)
+GC_mode <- "standard"
+
+## 4) Define requested domains using LDSC labels -----------------------------
+## Neuroinflammatory: IBS, Chronic_Sinusitis, Migraine, GERD, MCP
+## Psychiatric: Depression, MCP, OUD, Insomnia, ADHD
+
+mcp_trait   <- "Multisite_Chronic_Pain"
+neuro_tr    <- c("IBS", "Chronic_Sinusitis", "Migraine", "GERD")
+psych_tr    <- c("Depression", "OUD", "Insomnia", "ADHD")
+
+make_axis <- function(mcp, domain_traits, all_traits) {
+  w <- rep(0, length(all_traits)); names(w) <- all_traits
+  w[mcp] <- 1
+  if (length(domain_traits) > 0) w[domain_traits] <- 1
+  w / sqrt(sum(w^2))
+}
+
+w_mcp_only  <- make_axis(mcp_trait, character(0), traits_ldsc)
+w_mcp_neuro <- make_axis(mcp_trait, neuro_tr,      traits_ldsc)
+w_mcp_psych <- make_axis(mcp_trait, psych_tr,      traits_ldsc)
+
+W_axes_raw <- cbind(
+  MCP_only        = w_mcp_only,
+  MCP_NeuroInflam = w_mcp_neuro,
+  MCP_Psych       = w_mcp_psych
+)
+rownames(W_axes_raw) <- traits_ldsc
+
+cat("\nRaw axis weights (LDSC trait space):\n")
+print(W_axes_raw)
+
+## 5) Orthogonalise axes in LDSC genetic space --------------------------------
+
+G <- t(W_axes_raw) %*% S_LD %*% W_axes_raw
+
+eigG <- eigen(G, symmetric = TRUE, only.values = TRUE)$values
+if (min(eigG) <= 1e-12) {
+  cat("Gram matrix near-singular; adding ridge.\n")
+  G <- G + diag(1e-8, nrow(G))
+}
+
+R <- chol(G)
+W_axes_orth <- W_axes_raw %*% solve(R)
+rownames(W_axes_orth) <- traits_ldsc
+colnames(W_axes_orth) <- colnames(W_axes_raw)
+
+cat("\nOrthogonality check t(W)%*%S%*%W (should be ~ diagonal):\n")
+print(round(t(W_axes_orth) %*% S_LD %*% W_axes_orth, 3))
+
+W_axes     <- W_axes_orth
+axis_names <- colnames(W_axes)
+n_axes     <- length(axis_names)
+
+## 6) Preallocate outputs ----------------------------------------------------
+
+axis_beta <- matrix(NA_real_, nrow = n_snp, ncol = n_axes, dimnames = list(NULL, axis_names))
+axis_se   <- matrix(NA_real_, nrow = n_snp, ncol = n_axes, dimnames = list(NULL, axis_names))
+axis_z    <- matrix(NA_real_, nrow = n_snp, ncol = n_axes, dimnames = list(NULL, axis_names))
+axis_p    <- matrix(NA_real_, nrow = n_snp, ncol = n_axes, dimnames = list(NULL, axis_names))
+
+## 7) Main loop --------------------------------------------------------------
+
+for (i in seq_len(n_snp)) {
+
+  b_i  <- B[i, ]
+  se_i <- SE[i, ]
+  if (any(!is.finite(b_i)) || any(!is.finite(se_i)) || any(se_i <= 0)) next
+
+  V_SNP_i <- get_V_SNP(
+    SE_SNP = SE,
+    I_LD   = I_LD,
+    varSNP = varSNP,
+    GC     = GC_mode,
+    coords = coords,
+    k      = k_tr,
+    i      = i
+  )
+
+  for (a in seq_len(n_axes)) {
+    w_a <- W_axes[, a]
+
+    beta_f <- as.numeric(crossprod(w_a, b_i))
+    var_f  <- as.numeric(t(w_a) %*% V_SNP_i %*% w_a)
+    if (!is.finite(var_f) || var_f <= 0) next
+
+    se_f <- sqrt(var_f)
+    z_f  <- beta_f / se_f
+    p_f  <- 2 * pnorm(-abs(z_f))
+
+    axis_beta[i, a] <- beta_f
+    axis_se[i, a]   <- se_f
+    axis_z[i, a]    <- z_f
+    axis_p[i, a]    <- p_f
+  }
+
+  if (i %% 100000 == 0) cat("Processed SNP", i, "of", n_snp, "\n")
+}
+
+## 8) Save -------------------------------------------------------------------
+
+out <- data.frame(
+  SNP = SS$SNP,
+  CHR = SS$CHR,
+  BP  = SS$BP,
+  A1  = SS$A1,
+  A2  = SS$A2,
+  MAF = SS$MAF
+)
+
+for (ax in axis_names) {
+  out[[paste0("beta.", ax)]] <- axis_beta[, ax]
+  out[[paste0("se.",   ax)]] <- axis_se[,   ax]
+  out[[paste0("z.",    ax)]] <- axis_z[,    ax]
+  out[[paste0("p.",    ax)]] <- axis_p[,    ax]
+}
+
+out_rds <- "MCP_9traits_AxesGWAS_orth_NeuroInflam_Psych.rds"
+out_tsv <- "MCP_9traits_AxesGWAS_orth_NeuroInflam_Psych.tsv"
+
+saveRDS(out, out_rds)
+write.table(out, file = out_tsv, sep = "\t", quote = FALSE, row.names = FALSE)
+
+cat("Done. Saved:\n  ", out_rds, "\n  ", out_tsv, "\n", sep = "")
