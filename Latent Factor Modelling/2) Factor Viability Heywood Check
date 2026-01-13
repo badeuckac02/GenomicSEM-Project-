@@ -1,0 +1,23 @@
+===Smoothed PD parallel analysis factor viability check ====
+
+library(psych)
+
+run_efa_check <- function(k) {
+  fit <- fa(
+    R_pd,
+    nfactors = k,
+    fm = "pa",
+    rotate = "oblimin",
+    SMC = FALSE,
+    scores = "none"
+  )
+  data.frame(
+    k = k,
+    heywood = isTRUE(fit$Heywood),
+    max_communality = max(fit$communality, na.rm = TRUE),
+    min_uniqueness  = min(fit$uniquenesses, na.rm = TRUE)
+  )
+}
+
+results <- do.call(rbind, lapply(2:7, run_efa_check))
+results
