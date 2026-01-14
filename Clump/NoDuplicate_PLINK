@@ -1,31 +1,17 @@
-#!/usr/bin/env bash
-
+module load plink/20220603
 
 VCFDIR="/reference/genepi/public_reference_panels/1000G_20101123_v3_GIANT"
-OUTDIR="/working/lab_miguelr/badeU/Reference/Clump"
-mkdir -p "$OUTDIR"
+REFDIR="/working/lab_miguelr/badeU/Reference/Clump"
 
-# If needed on your cluster:
-# module load plink/1.90b7.4
-# module load plink2/2.00a
-
-# --- helper: find the right chr-specific VCF in $VCFDIR ---
 find_vcf () {
   local chr="$1"
-  # Try a few common naming patterns; extend if your files differ.
   local candidates=(
     "${VCFDIR}/chr${chr}.vcf.gz"
-    "${VCFDIR}/chr${chr}.vcf.bgz"
     "${VCFDIR}/chr${chr}."*.vcf.gz
-    "${VCFDIR}/chr${chr}."*.vcf.bgz
-    "${VCFDIR}/chr${chr}_"*.vcf.gz
-    "${VCFDIR}/chr${chr}_"*.vcf.bgz
     "${VCFDIR}"/*"chr${chr}"*.vcf.gz
-    "${VCFDIR}"/*"chr${chr}"*.vcf.bgz
   )
   for f in "${candidates[@]}"; do
     if compgen -G "$f" > /dev/null; then
-      # Return the first match
       ls -1 $f 2>/dev/null | head -n 1
       return 0
     fi
@@ -33,49 +19,57 @@ find_vcf () {
   return 1
 }
 
-for chr in $(seq 1 21); do
-  echo "============================================================"
-  echo "Processing chr${chr} (skipping chr22 by design)"
-  echo "============================================================"
+for CHR in $(seq 1 17); do
+  echo "===================="
+  echo "Fixing chr${CHR}"
+  echo "===================="
 
-  vcf="$(find_vcf "$chr" || true)"
-  if [[ -z "${vcf:-}" ]]; then
-    echo "WARNING: No VCF found for chr${chr} in ${VCFDIR}; skipping."
+  VCF="$(find_vcf "$CHR" || true)"
+  if [[ -z "${VCF:-}" ]]; then
+    echo "ERROR: cannot find VCF for chr${CHR} in ${VCFDIR}"
     continue
   fi
-  echo "VCF: $vcf"
+  echo "VCF: $VCF"
 
-  tmp="${OUTDIR}/chr${chr}_tmp"
-  out="${OUTDIR}/chr${chr}"
-
-  # 1) VCF -> BED/BIM/FAM (tmp)
-  plink2 \
-    --vcf "$vcf" \
-    --max-alleles 2 \
+  # Build fixed chromosome
+  plink \
+    --vcf "$VCF" \
+    --double-id \
+    --allow-extra-chr \
+    --biallelic-only strict \
     --snps-only just-acgt \
     --keep-allele-order \
+    --set-missing-var-ids @:#:$r:$a \
     --make-bed \
-    --out "$tmp"
+    --out "${REFDIR}/chr${CHR}_fix"
 
-  # 2) Identify duplicate IDs
-  plink \
-    --bfile "$tmp" \
-    --list-duplicate-vars ids-only suppress-first \
-    --out "$tmp"
+  # Replace existing chr files (backup first)
+  mv "${REFDIR}/chr${CHR}.bed" "${REFDIR}/chr${CHR}.bed.bak"
+  mv "${REFDIR}/chr${CHR}.bim" "${REFDIR}/chr${CHR}.bim.bak"
+  mv "${REFDIR}/chr${CHR}.fam" "${REFDIR}/chr${CHR}.fam.bak"
 
-  # 3) Exclude duplicates and write final set
-  plink \
-    --bfile "$tmp" \
-    --exclude "${tmp}.dupvar" \
-    --make-bed \
-    --out "$out"
+  mv "${REFDIR}/chr${CHR}_fix.bed" "${REFDIR}/chr${CHR}.bed"
+  mv "${REFDIR}/chr${CHR}_fix.bim" "${REFDIR}/chr${CHR}.bim"
+  mv "${REFDIR}/chr${CHR}_fix.fam" "${REFDIR}/chr${CHR}.fam"
 
-  # 4) Cleanup intermediates
-  rm -f \
-    "${tmp}.bed" "${tmp}.bim" "${tmp}.fam" \
-    "${tmp}.log" "${tmp}.nosex" "${tmp}.dupvar"
+  # Validate no dot IDs and no duplicated IDs
+  BIM="${REFDIR}/chr${CHR}.bim"
+  echo -n "dot_ids="; awk '$2=="."' "$BIM" | wc -l
+  echo -n "dup_ids="; awk '{print $2}' "$BIM" | sort | uniq -d | wc -l
+done
+======== SANITY =========
+REFDIR="/working/lab_miguelr/badeU/Reference/Clump"
+OUT="${REFDIR}/dupcheck_allchr_afterfix.tsv"
+echo -e "CHR\tNVAR\tDOT_IDS\tN_DUP_IDS\tEXAMPLE_DUP_ID" > "$OUT"
 
-  echo "Done chr${chr}: ${out}.bed/.bim/.fam"
+for CHR in $(seq 1 22); do
+  BIM="${REFDIR}/chr${CHR}.bim"
+  NVAR=$(wc -l < "$BIM")
+  DOT_IDS=$(awk '$2=="."' "$BIM" | wc -l)
+  N_DUP_IDS=$(awk '{print $2}' "$BIM" | sort | uniq -d | wc -l)
+  EXAMPLE_DUP_ID=$(awk '{print $2}' "$BIM" | sort | uniq -d | head -n 1)
+  [ -z "$EXAMPLE_DUP_ID" ] && EXAMPLE_DUP_ID="NONE"
+  echo -e "${CHR}\t${NVAR}\t${DOT_IDS}\t${N_DUP_IDS}\t${EXAMPLE_DUP_ID}" >> "$OUT"
 done
 
-echo "All done (chr1–chr21). chr22 was intentionally skipped."
+column -t "$OUT" | head -n 30
