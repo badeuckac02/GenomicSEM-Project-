@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+
+VCFDIR="/reference/genepi/public_reference_panels/1000G_20101123_v3_GIANT"
+OUTDIR="/working/lab_miguelr/badeU/Reference/Clump"
+mkdir -p "$OUTDIR"
+
+# If needed on your cluster:
+# module load plink/1.90b7.4
+# module load plink2/2.00a
+
+# --- helper: find the right chr-specific VCF in $VCFDIR ---
+find_vcf () {
+  local chr="$1"
+  # Try a few common naming patterns; extend if your files differ.
+  local candidates=(
+    "${VCFDIR}/chr${chr}.vcf.gz"
+    "${VCFDIR}/chr${chr}.vcf.bgz"
+    "${VCFDIR}/chr${chr}."*.vcf.gz
+    "${VCFDIR}/chr${chr}."*.vcf.bgz
+    "${VCFDIR}/chr${chr}_"*.vcf.gz
+    "${VCFDIR}/chr${chr}_"*.vcf.bgz
+    "${VCFDIR}"/*"chr${chr}"*.vcf.gz
+    "${VCFDIR}"/*"chr${chr}"*.vcf.bgz
+  )
+  for f in "${candidates[@]}"; do
+    if compgen -G "$f" > /dev/null; then
+      # Return the first match
+      ls -1 $f 2>/dev/null | head -n 1
+      return 0
+    fi
+  done
+  return 1
+}
+
+for chr in $(seq 1 21); do
+  echo "============================================================"
+  echo "Processing chr${chr} (skipping chr22 by design)"
+  echo "============================================================"
+
+  vcf="$(find_vcf "$chr" || true)"
+  if [[ -z "${vcf:-}" ]]; then
+    echo "WARNING: No VCF found for chr${chr} in ${VCFDIR}; skipping."
+    continue
+  fi
+  echo "VCF: $vcf"
+
+  tmp="${OUTDIR}/chr${chr}_tmp"
+  out="${OUTDIR}/chr${chr}"
+
+  # 1) VCF -> BED/BIM/FAM (tmp)
+  plink2 \
+    --vcf "$vcf" \
+    --max-alleles 2 \
+    --snps-only just-acgt \
+    --keep-allele-order \
+    --make-bed \
+    --out "$tmp"
+
+  # 2) Identify duplicate IDs
+  plink \
+    --bfile "$tmp" \
+    --list-duplicate-vars ids-only suppress-first \
+    --out "$tmp"
+
+  # 3) Exclude duplicates and write final set
+  plink \
+    --bfile "$tmp" \
+    --exclude "${tmp}.dupvar" \
+    --make-bed \
+    --out "$out"
+
+  # 4) Cleanup intermediates
+  rm -f \
+    "${tmp}.bed" "${tmp}.bim" "${tmp}.fam" \
+    "${tmp}.log" "${tmp}.nosex" "${tmp}.dupvar"
+
+  echo "Done chr${chr}: ${out}.bed/.bim/.fam"
+done
+
+echo "All done (chr1–chr21). chr22 was intentionally skipped."
