@@ -1,0 +1,72 @@
+WD="/working/lab_miguelr/badeU/GenSEM_Files/GWASClean/CommonFactorGWAS"
+CLUMP_DIR="${WD}/Clump_9traits_NeuroInflam_Psych"
+REFDIR="/working/lab_miguelr/badeU/Reference/Clump"
+
+mkdir -p "${CLUMP_DIR}"
+
+TRAITS=(MCP_only MCP_NeuroInflam MCP_Psych)
+
+for TRAIT in "${TRAITS[@]}"; do
+  echo "============================================="
+  echo "Clumping: ${TRAIT}"
+  IN="${CLUMP_DIR}/${TRAIT}_for_clump.txt"
+
+  if [ ! -s "${IN}" ]; then
+    echo "Missing input: ${IN}"
+    continue
+  fi
+
+  # Optional but strongly recommended: ensure unique SNP IDs and no '.'/blank
+  CLEAN="${CLUMP_DIR}/${TRAIT}_for_clump.clean.txt"
+  (
+    head -n 1 "$IN"
+    awk -F'\t' '
+      function trim(s){ gsub(/^[ \t\r]+|[ \t\r]+$/, "", s); return s }
+      NR>1 {
+        snp=trim($1); p=trim($2)
+        if(snp=="" || snp=="." || snp=="NA") next
+        if(p=="" || p=="NA") next
+        print snp "\t" p
+      }' "$IN" \
+    | sort -t$'\t' -k1,1 -k2,2g \
+    | awk -F'\t' '!seen[$1]++'
+  ) > "$CLEAN"
+
+  for CHR in $(seq 1 22); do
+    BFILE="${REFDIR}/chr${CHR}"
+
+    if [ ! -f "${BFILE}.bed" ] || [ ! -f "${BFILE}.bim" ] || [ ! -f "${BFILE}.fam" ]; then
+      echo "Missing bfile for chr${CHR}: ${BFILE}(.bed/.bim/.fam)"
+      continue
+    fi
+
+    plink \
+      --bfile "${BFILE}" \
+      --clump "${CLEAN}" \
+      --clump-snp-field SNP \
+      --clump-field P \
+      --clump-p1 5e-8 \
+      --clump-p2 1e-4 \
+      --clump-r2 0.1 \
+      --clump-kb 1000 \
+      --out "${CLUMP_DIR}/${TRAIT}_p5e8_chr${CHR}"
+  done
+done
+====== COMBINE PER AXIS ========
+
+for TRAIT in MCP_only MCP_NeuroInflam MCP_Psych; do
+  OUT="${CLUMP_DIR}/${TRAIT}_p5e8_ALLCHR.clumped"
+  first=1
+  for CHR in $(seq 1 22); do
+    f="${CLUMP_DIR}/${TRAIT}_p5e8_chr${CHR}.clumped"
+    [ -s "$f" ] || continue
+    if [ $first -eq 1 ]; then
+      cat "$f" > "$OUT"
+      first=0
+    else
+      # skip header lines (first line) for subsequent files
+      awk 'NR>1' "$f" >> "$OUT"
+    fi
+  done
+  echo "Merged: $OUT"
+done
