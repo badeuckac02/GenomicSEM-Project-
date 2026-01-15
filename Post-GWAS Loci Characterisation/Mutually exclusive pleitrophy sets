@@ -1,0 +1,38 @@
+
+export LC_ALL=C
+
+BASE="/working/lab_miguelr/badeU/GenSEM_Files/GWASClean/CommonFactorGWAS/Clump_9traits_NeuroInflam_Psych/FINAL"
+OUTDIR="${BASE}/Pleiotropy_Strict_Sets"
+mkdir -p "$OUTDIR"
+
+# Extract lead SNP rsIDs from merged .clumped (skip header; take SNP col=3)
+lead_from_clumped () {
+  local CL="$1"
+  awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $3}' "$CL" | sort -u
+}
+
+A="${OUTDIR}/MCP_only.leads.sorted"          # MCP_only axis leads
+B="${OUTDIR}/MCP_NeuroInflam.leads.sorted"   # NeuroInflam axis leads
+C="${OUTDIR}/MCP_Psych.leads.sorted"         # Psych axis leads
+
+lead_from_clumped "${BASE}/MCP_only_p5e8_ALLCHR.clumped"        > "$A"
+lead_from_clumped "${BASE}/MCP_NeuroInflam_p5e8_ALLCHR.clumped" > "$B"
+lead_from_clumped "${BASE}/MCP_Psych_p5e8_ALLCHR.clumped"       > "$C"
+
+# Shared across all 3
+comm -12 <(comm -12 "$A" "$B") "$C" > "${OUTDIR}/SHARED_ALL3.snps"
+
+# MCP-only (strict): in A, not in B, not in C
+comm -23 "$A" <(sort -u "$B" "$C") > "${OUTDIR}/MCP_ONLY_STRICT.snps"
+
+# MCP–NeuroInflam only: in A ∩ B, but not in C
+comm -23 <(comm -12 "$A" "$B") "$C" > "${OUTDIR}/MCP_NEUROINFLAM_ONLY.snps"
+
+# MCP–Psych only: in A ∩ C, but not in B
+comm -23 <(comm -12 "$A" "$C") "$B" > "${OUTDIR}/MCP_PSYCH_ONLY.snps"
+
+echo "=== Strict pleiotropy sets written to: $OUTDIR ==="
+for f in MCP_ONLY_STRICT MCP_NEUROINFLAM_ONLY MCP_PSYCH_ONLY SHARED_ALL3; do
+  echo -n "${f}.snps  "
+  wc -l < "${OUTDIR}/${f}.snps"
+done
