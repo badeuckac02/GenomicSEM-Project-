@@ -1,0 +1,95 @@
+
+export LC_ALL=C
+
+BASE="/working/lab_miguelr/badeU/GenSEM_Files/GWASClean/CommonFactorGWAS/Clump_9traits_NeuroInflam_Psych/FINAL"
+cd "$BASE"
+
+# ---------- 1) Rebuild lead lists (sorted unique rsIDs) ----------
+awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $3}' MCP_only_p5e8_ALLCHR.clumped        | sort -u > MCP_only.leads.sorted
+awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $3}' MCP_NeuroInflam_p5e8_ALLCHR.clumped | sort -u > MCP_NeuroInflam.leads.sorted
+awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $3}' MCP_Psych_p5e8_ALLCHR.clumped       | sort -u > MCP_Psych.leads.sorted
+
+# ---------- 2) Build strict pleiotropy/specificity sets ----------
+# shared among all 3
+comm -12 MCP_only.leads.sorted <(comm -12 MCP_NeuroInflam.leads.sorted MCP_Psych.leads.sorted) > SHARED_ALL3.snps
+
+# NeuroInflam-only among MCP leads (in MCP & NI, NOT in Psych)
+comm -12 MCP_only.leads.sorted MCP_NeuroInflam.leads.sorted \
+  | comm -23 - MCP_Psych.leads.sorted > MCP_NEUROINFLAM_ONLY.snps
+
+# Psych-only among MCP leads (in MCP & Psych, NOT in NI)
+comm -12 MCP_only.leads.sorted MCP_Psych.leads.sorted \
+  | comm -23 - MCP_NeuroInflam.leads.sorted > MCP_PSYCH_ONLY.snps
+
+# MCP-only strict (in MCP, NOT in NI, NOT in Psych)
+comm -23 MCP_only.leads.sorted <(sort -u MCP_NeuroInflam.leads.sorted MCP_Psych.leads.sorted) > MCP_ONLY_STRICT.snps
+
+# ---------- 3) Sanity checks ----------
+echo "=== Strict set sizes ==="
+wc -l MCP_ONLY_STRICT.snps MCP_NEUROINFLAM_ONLY.snps MCP_PSYCH_ONLY.snps SHARED_ALL3.snps | column -t
+
+echo "=== Pairwise overlaps (must be 0) ==="
+for a in MCP_ONLY_STRICT MCP_NEUROINFLAM_ONLY MCP_PSYCH_ONLY SHARED_ALL3; do
+  for b in MCP_ONLY_STRICT MCP_NEUROINFLAM_ONLY MCP_PSYCH_ONLY SHARED_ALL3; do
+    if [ "$a" \< "$b" ]; then
+      n=$(comm -12 ${a}.snps ${b}.snps | wc -l)
+      printf "%-20s ∩ %-20s = %d\n" "$a" "$b" "$n"
+    fi
+  done
+done
+
+# union should equal MCP_only leads (30679)
+cat MCP_ONLY_STRICT.snps MCP_NEUROINFLAM_ONLY.snps MCP_PSYCH_ONLY.snps SHARED_ALL3.snps \
+  | sort -u > UNION_of_4sets.snps
+
+echo "=== Union vs MCP_only leads ==="
+echo -n "Union size: "; wc -l < UNION_of_4sets.snps
+echo -n "MCP_only leads: "; wc -l < MCP_only.leads.sorted
+echo "comm -3 output (should be empty):"
+comm -3 UNION_of_4sets.snps MCP_only.leads.sorted | head
+
+# ---------- 4) Build categories + master table (requires tmp2.sorted already exists) ----------
+# If tmp2.sorted is not present, you can rebuild it from your earlier core/join steps.
+
+awk '{print $1 "\tMCP_ONLY_STRICT"}'      MCP_ONLY_STRICT.snps      > cat1
+awk '{print $1 "\tMCP_NEUROINFLAM_ONLY"}' MCP_NEUROINFLAM_ONLY.snps > cat2
+awk '{print $1 "\tMCP_PSYCH_ONLY"}'       MCP_PSYCH_ONLY.snps       > cat3
+awk '{print $1 "\tSHARED_ALL3"}'          SHARED_ALL3.snps          > cat4
+cat cat1 cat2 cat3 cat4 | sort -t $'\t' -k1,1 > categories.sorted
+rm -f cat1 cat2 cat3 cat4
+
+# Build tmp2.sorted if missing
+if [ ! -s tmp2.sorted ]; then
+  echo "tmp2.sorted not found; rebuilding it now."
+
+  awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $3 "\t" $1 "\t" $4 "\t" $5}' MCP_only_p5e8_ALLCHR.clumped        | awk 'NF>0' > MCP_only.core
+  awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $3 "\t" $5}'                 MCP_NeuroInflam_p5e8_ALLCHR.clumped | awk 'NF>0' > MCP_NeuroInflam.core
+  awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $3 "\t" $5}'                 MCP_Psych_p5e8_ALLCHR.clumped       | awk 'NF>0' > MCP_Psych.core
+
+  sort -t $'\t' -k1,1 MCP_only.core        > MCP_only.sorted
+  sort -t $'\t' -k1,1 MCP_NeuroInflam.core > MCP_NeuroInflam.sorted
+  sort -t $'\t' -k1,1 MCP_Psych.core       > MCP_Psych.sorted
+
+  join -t $'\t' -a1 -e NA -o '1.1 1.2 1.3 1.4 2.2' MCP_only.sorted MCP_NeuroInflam.sorted \
+    | sort -t $'\t' -k1,1 > tmp1.sorted
+
+  join -t $'\t' -a1 -e NA -o '1.1 1.2 1.3 1.4 1.5 2.2' tmp1.sorted MCP_Psych.sorted \
+    | sort -t $'\t' -k1,1 > tmp2.sorted
+
+  rm -f MCP_only.core MCP_NeuroInflam.core MCP_Psych.core MCP_only.sorted MCP_NeuroInflam.sorted MCP_Psych.sorted tmp1.sorted
+fi
+
+# Join tmp2 to categories to attach Category
+join -t $'\t' -a1 -e NA -o '1.1 2.2 1.2 1.3 1.4 1.5 1.6' tmp2.sorted categories.sorted > MASTER_PLEIOTROPY_TABLE.body.tsv
+
+{
+  echo -e "SNP\tCategory\tCHR\tBP\tP_MCP_only\tP_MCP_NeuroInflam\tP_MCP_Psych"
+  cat MASTER_PLEIOTROPY_TABLE.body.tsv
+} > MASTER_PLEIOTROPY_TABLE.tsv
+
+rm -f MASTER_PLEIOTROPY_TABLE.body.tsv
+
+echo "=== Counts by Category (should be non-NA) ==="
+cut -f2 MASTER_PLEIOTROPY_TABLE.tsv | tail -n +2 | sort | uniq -c | column -t
+
+echo "Wrote: ${BASE}/MASTER_PLEIOTROPY_TABLE.tsv"
